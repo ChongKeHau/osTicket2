@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ticket
       POSTGRES_PASSWORD: ticket
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,8 +20,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/ticket
+      FLYWAY_USER: ticket
+      FLYWAY_PASSWORD: ticket
+      FLYWAY_CONNECT_RETRIES: "10"
     volumes:
       - ./db/migrations:/flyway/sql:ro
-    command: -url=jdbc:postgresql://postgres:5432/ticket -user=ticket -password=ticket -connectRetries=10 migrate
+    command: migrate
 volumes:
   pgdata: {}

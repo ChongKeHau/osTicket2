@@ -95,10 +95,10 @@ func TestBindJSONReportsJSONFieldNames(t *testing.T) {
 
 func TestParsePage(t *testing.T) {
 	cases := []struct {
-		query    string
-		page     int
-		size     int
-		wantErr  bool
+		query   string
+		page    int
+		size    int
+		wantErr bool
 	}{
 		{"", 1, 25, false},
 		{"page=3&page_size=10", 3, 10, false},
