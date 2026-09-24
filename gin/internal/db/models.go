@@ -234,6 +234,8 @@ type Attachment struct {
 	ThreadEntryID int64
 	FileID        int64
 	Inline        bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Department struct {
@@ -276,6 +278,7 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	RevokedAt *time.Time
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Staff struct {
@@ -293,8 +296,10 @@ type Staff struct {
 }
 
 type StaffDepartment struct {
-	StaffID int64
-	DeptID  int64
+	StaffID   int64
+	DeptID    int64
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type ThreadEntry struct {
@@ -340,6 +345,7 @@ type TicketEvent struct {
 	Kind      TicketEventKind
 	Data      []byte
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type TicketPriority struct {

@@ -33,8 +33,10 @@ ALTER TABLE department
   ADD CONSTRAINT department_manager_fk FOREIGN KEY (manager_id) REFERENCES staff(id);
 
 CREATE TABLE staff_department (
-  staff_id  bigint NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-  dept_id   bigint NOT NULL REFERENCES department(id),
+  staff_id    bigint NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  dept_id     bigint NOT NULL REFERENCES department(id),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (staff_id, dept_id)
 );
 
@@ -44,7 +46,8 @@ CREATE TABLE refresh_token (
   staff_id    bigint NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
   expires_at  timestamptz NOT NULL,
   revoked_at  timestamptz,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX refresh_token_staff_idx ON refresh_token (staff_id);
 
@@ -127,7 +130,8 @@ CREATE TABLE ticket_event (
   staff_id    bigint REFERENCES staff(id),
   kind        ticket_event_kind NOT NULL,
   data        jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ticket_event_ticket_idx ON ticket_event (ticket_id, id);
 
@@ -148,6 +152,8 @@ CREATE TABLE attachment (
   thread_entry_id  bigint NOT NULL REFERENCES thread_entry(id) ON DELETE CASCADE,
   file_id          bigint NOT NULL REFERENCES file(id),
   inline           boolean NOT NULL DEFAULT false,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (thread_entry_id, file_id)
 );
 CREATE INDEX attachment_file_idx ON attachment (file_id);
