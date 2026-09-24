@@ -105,14 +105,22 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		Addr: fmt.Sprintf(":%d", cfg.Port), Handler: engine,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	done := make(chan error, 1)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		done <- srv.Shutdown(shutdownCtx)
 	}()
 	slog.Info("listening", "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	// ListenAndServe returns ErrServerClosed as soon as Shutdown is called,
+	// while Shutdown itself is still draining in-flight requests in the
+	// goroutine above. Wait for it to finish before returning, so callers
+	// (main's pool.Close and process exit) don't run out from under it.
+	if err := <-done; err != nil {
 		return err
 	}
 	return nil

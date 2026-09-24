@@ -99,7 +99,7 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 		if err != nil {
 			return err
 		}
-		if err := attachFiles(ctx, q, entry.ID, in.FileIDs); err != nil {
+		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
 		if err := q.MarkTicketAnswered(ctx, id); err != nil {
@@ -143,7 +143,7 @@ func (s *service) Note(ctx context.Context, p auth.Principal, id int64, in NoteI
 		if err != nil {
 			return err
 		}
-		if err := attachFiles(ctx, q, entry.ID, in.FileIDs); err != nil {
+		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
 		out, err = entryWithAttachments(ctx, q, entry)
@@ -336,12 +336,19 @@ func applyStatus(ctx context.Context, q *db.Queries, p auth.Principal, row db.Ge
 	return event(ctx, q, row.ID, &p.StaffID, kind, map[string]any{"from": row.StatusID, "to": statusID})
 }
 
-func attachFiles(ctx context.Context, q *db.Queries, entryID int64, fileIDs []int64) error {
+func attachFiles(ctx context.Context, q *db.Queries, p auth.Principal, entryID int64, fileIDs []int64) error {
 	for _, fid := range fileIDs {
-		if _, err := q.GetFile(ctx, fid); errors.Is(err, pgx.ErrNoRows) {
+		file, err := q.GetFile(ctx, fid)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return apperr.Validation("file_ids", "unknown file "+strconv.FormatInt(fid, 10))
 		} else if err != nil {
 			return err
+		}
+		// An unattached file is readable (and thus attachable) only by its
+		// uploader or an admin; other principals get the same "unknown file"
+		// error as a nonexistent file so existence isn't revealed.
+		if !p.IsAdmin && (file.UploadedBy == nil || *file.UploadedBy != p.StaffID) {
+			return apperr.Validation("file_ids", "unknown file "+strconv.FormatInt(fid, 10))
 		}
 		attached, err := q.IsFileAttached(ctx, fid)
 		if err != nil {

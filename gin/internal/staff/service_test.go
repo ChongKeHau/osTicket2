@@ -78,11 +78,24 @@ func TestStaffLifecycle(t *testing.T) {
 	if _, err := svc.Update(ctx, created.ID, UpdateInput{IsActive: &active}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authSvc.Login(ctx, "ann", "newpassword1"); err != nil {
+	sess2, err := authSvc.Login(ctx, "ann", "newpassword1")
+	if err != nil {
 		t.Fatalf("login with new password: %v", err)
 	}
 	got, err := svc.Get(ctx, created.ID)
 	if err != nil || got.Username != "ann" {
 		t.Fatalf("get: %+v %v", got, err)
+	}
+
+	// SetPassword must revoke existing refresh tokens, not just change the
+	// hash: a stolen refresh token from before the reset must stop working.
+	if err := svc.SetPassword(ctx, created.ID, "resetpassword1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authSvc.Refresh(ctx, sess2.RefreshToken); !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("refresh after password reset must fail: %v", err)
+	}
+	if _, err := authSvc.Login(ctx, "ann", "resetpassword1"); err != nil {
+		t.Fatalf("login with reset password: %v", err)
 	}
 }

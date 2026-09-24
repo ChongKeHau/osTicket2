@@ -10,7 +10,10 @@ import (
 // bcryptCost is a variable so tests can lower it.
 var bcryptCost = bcrypt.DefaultCost
 
-const minPasswordLen = 8
+const (
+	minPasswordLen = 8
+	maxPasswordLen = 72
+)
 
 // dummyHash is a bcrypt hash of a fixed placeholder password. Login compares
 // against it when the username doesn't exist, so an unknown username costs
@@ -40,6 +43,9 @@ func ensureDummyHash() string {
 func HashPassword(pw string) (string, error) {
 	if len(pw) < minPasswordLen {
 		return "", apperr.Validation("password", "must be at least 8 characters")
+	}
+	if len(pw) > maxPasswordLen {
+		return "", apperr.Validation("password", "must be at most 72 bytes")
 	}
 	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcryptCost)
 	if err != nil {

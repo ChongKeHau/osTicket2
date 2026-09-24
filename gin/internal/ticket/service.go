@@ -122,7 +122,7 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 		if err != nil {
 			return err
 		}
-		if err := attachFiles(ctx, q, entry.ID, in.FileIDs); err != nil {
+		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
 		if err := event(ctx, q, id, &p.StaffID, db.TicketEventKindCreated, map[string]any{"number": number}); err != nil {

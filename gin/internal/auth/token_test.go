@@ -106,4 +106,13 @@ func TestPassword(t *testing.T) {
 	if _, err := HashPassword("short"); err == nil {
 		t.Fatal("short password must be rejected")
 	}
+	var ve *apperr.ValidationError
+	long := strings.Repeat("a", 73)
+	if _, err := HashPassword(long); !errors.As(err, &ve) || ve.Fields["password"] == "" {
+		t.Fatalf("password over 72 bytes must be a validation error, not a 500: %v", err)
+	}
+	maxLen := strings.Repeat("a", 72)
+	if _, err := HashPassword(maxLen); err != nil {
+		t.Fatalf("password of exactly 72 bytes must be accepted: %v", err)
+	}
 }

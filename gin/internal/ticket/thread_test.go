@@ -19,10 +19,24 @@ func (f *fx) file(t *testing.T, name string) db.File {
 	return fl
 }
 
+// fileBy is like file but records the given staff id as the uploader, as a
+// real upload would.
+func (f *fx) fileBy(t *testing.T, name string, uploadedBy int64) db.File {
+	t.Helper()
+	fl, err := f.q.CreateFile(f.ctx, db.CreateFileParams{
+		Key: "key-" + name, Name: name, Mime: "text/plain", Size: 3, Sha256: "abc", Backend: "local",
+		UploadedBy: &uploadedBy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fl
+}
+
 func TestReplyMarksAnsweredAndCanClose(t *testing.T) {
 	f := newFixture(t)
 	tk := f.create(t, f.agent, "Q", f.support.ID)
-	fl := f.file(t, "a.txt")
+	fl := f.fileBy(t, "a.txt", f.agent.StaffID)
 	entry, err := f.svc.Reply(f.ctx, f.agent, tk.ID, ReplyInput{Body: "Answer", FileIDs: []int64{fl.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +219,7 @@ func TestTransfer(t *testing.T) {
 func TestAttachFilesRules(t *testing.T) {
 	f := newFixture(t)
 	tk := f.create(t, f.agent, "Q", f.support.ID)
-	fl := f.file(t, "b.txt")
+	fl := f.fileBy(t, "b.txt", f.agent.StaffID)
 	if _, err := f.svc.Note(f.ctx, f.agent, tk.ID, NoteInput{Body: "n", FileIDs: []int64{fl.ID}}); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +233,7 @@ func TestAttachFilesRules(t *testing.T) {
 	if n := f.count(t, `SELECT count(*) FROM thread_entry WHERE ticket_id = $1`, tk.ID); n != 2 {
 		t.Fatalf("failed notes must roll back entries: %d", n)
 	}
-	fl2 := f.file(t, "c.txt")
+	fl2 := f.fileBy(t, "c.txt", f.agent.StaffID)
 	created, err := f.svc.Create(f.ctx, f.agent, CreateInput{Subject: "with file", Message: "m", RequesterEmail: "r@x.test", DeptID: &f.support.ID, FileIDs: []int64{fl2.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -227,6 +241,33 @@ func TestAttachFilesRules(t *testing.T) {
 	th, _ := f.svc.Thread(f.ctx, f.agent, created.ID, 0, 10)
 	if len(th.Items) != 1 || len(th.Items[0].Attachments) != 1 || th.Items[0].Attachments[0].FileID != fl2.ID {
 		t.Fatalf("create with file: %+v", th)
+	}
+}
+
+// TestAttachFilesRejectsOtherUploader proves that agent B cannot take over
+// agent A's unattached upload by posting a note referencing A's file_id: the
+// upload is readable/attachable only by its uploader or an admin. It also
+// covers a file with no uploader (UploadedBy == nil), which is rejected for
+// any non-admin.
+func TestAttachFilesRejectsOtherUploader(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+
+	othersFile := f.fileBy(t, "others.txt", f.staff["other"].ID)
+	var ve *apperr.ValidationError
+	if _, err := f.svc.Note(f.ctx, f.agent, tk.ID, NoteInput{Body: "n", FileIDs: []int64{othersFile.ID}}); !errors.As(err, &ve) || ve.Fields["file_ids"] == "" {
+		t.Fatalf("agent attaching another agent's file must be rejected as unknown: %v", err)
+	}
+
+	unownedFile := f.file(t, "unowned.txt")
+	if _, err := f.svc.Note(f.ctx, f.agent, tk.ID, NoteInput{Body: "n", FileIDs: []int64{unownedFile.ID}}); !errors.As(err, &ve) || ve.Fields["file_ids"] == "" {
+		t.Fatalf("agent attaching a file with no uploader must be rejected as unknown: %v", err)
+	}
+
+	// The admin may attach either file: an admin's IsAdmin bypasses the
+	// uploader check.
+	if _, err := f.svc.Note(f.ctx, f.admin, tk.ID, NoteInput{Body: "n", FileIDs: []int64{othersFile.ID}}); err != nil {
+		t.Fatalf("admin attaching another agent's file: %v", err)
 	}
 }
 

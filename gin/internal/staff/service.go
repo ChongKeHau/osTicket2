@@ -172,14 +172,19 @@ func (s *service) SetPassword(ctx context.Context, id int64, password string) er
 	if err != nil {
 		return err
 	}
-	n, err := db.New(s.db).SetStaffPassword(ctx, db.SetStaffPasswordParams{ID: id, PasswordHash: hash})
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return fmt.Errorf("staff %d: %w", id, apperr.ErrNotFound)
-	}
-	return nil
+	return db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		n, err := q.SetStaffPassword(ctx, db.SetStaffPasswordParams{ID: id, PasswordHash: hash})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("staff %d: %w", id, apperr.ErrNotFound)
+		}
+		// A password reset must invalidate any refresh tokens issued before
+		// it, so a stolen refresh token stops rotating once the password is
+		// changed.
+		return q.RevokeStaffRefreshTokens(ctx, id)
+	})
 }
 
 func build(ctx context.Context, q *db.Queries, r db.Staff) (Staff, error) {
