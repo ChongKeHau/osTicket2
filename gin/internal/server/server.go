@@ -28,7 +28,7 @@ type Options struct {
 func New(o Options) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(RequestID(), Logger(), Recovery(), CORS(o.CORSOrigins))
+	r.Use(RequestID(), Logger(), Recovery(), CORS(o.CORSOrigins), MaxBodyBytes())
 	r.GET("/health", health(o.Pinger))
 	api := r.Group("/api/v1")
 	public := api.Group("")

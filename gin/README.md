@@ -19,6 +19,14 @@ If port 5432 is already in use on your machine, set `POSTGRES_PORT` (e.g.
 `export POSTGRES_PORT=5433`) before `make migrate`/`make db-up`, and point
 `DATABASE_URL` at that port instead.
 
+`db/migrations/V1__init.sql` and `V2__seed.sql` are frozen once this branch
+merges: Flyway checksums them, so editing either file after that point will
+make every existing database fail migration with a checksum mismatch. Future
+schema changes go in new `V3__*.sql` and up files instead. If you have a
+`pgdata` volume left over from an earlier state of this branch (before the
+migrations settled), you'll hit that same checksum error on `make migrate`;
+run `docker compose down -v` to drop the volume and start clean.
+
 ## Configuration (environment)
 
 | Variable | Default | Notes |

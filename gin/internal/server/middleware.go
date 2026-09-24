@@ -6,11 +6,31 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/httpx"
 )
+
+// maxJSONBodyBytes bounds the body of ordinary JSON requests. /api/v1/files
+// has its own, larger limit (see attachment.Handler.upload) and is excluded.
+const maxJSONBodyBytes = 1 << 20
+
+const filesPathPrefix = "/api/v1/files"
+
+// MaxBodyBytes caps the request body for every route except /api/v1/files,
+// which sets its own (larger) MaxBytesReader limit for uploads. Without this,
+// /auth/login and /auth/refresh (and any other JSON route) would accept a
+// body of unbounded size before Gin's JSON binder ever runs.
+func MaxBodyBytes() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !strings.HasPrefix(c.Request.URL.Path, filesPathPrefix) {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxJSONBodyBytes)
+		}
+		c.Next()
+	}
+}
 
 const requestIDKey = "request_id"
 

@@ -107,6 +107,9 @@ func TestParsePage(t *testing.T) {
 		{"page_size=-5", 0, 0, true},
 		{"page_size=abc", 0, 0, true},
 		{"page=0", 0, 0, true},
+		{"page=2000000000", 0, 0, true},
+		{"page=1000001", 0, 0, true},
+		{"page=1000000", 1000000, 25, false},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/x?"+tc.query, nil)

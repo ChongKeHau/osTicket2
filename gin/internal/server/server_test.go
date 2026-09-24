@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,6 +58,55 @@ func TestRequestIDAndRecovery(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Header().Get("X-Request-Id") == strings.Repeat("x", 100) {
 		t.Fatal("overlong request id should be replaced")
+	}
+}
+
+func TestMaxBodyBytes(t *testing.T) {
+	r := New(Options{Pinger: pinger{}, Mount: func(public, private *gin.RouterGroup) {
+		public.POST("/echo", func(c *gin.Context) {
+			var body struct {
+				V string `json:"v"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				c.String(http.StatusBadRequest, "too large or malformed")
+				return
+			}
+			c.Status(http.StatusOK)
+		})
+		// A route under /api/v1/files must not be capped by MaxBodyBytes: it
+		// has its own, larger limit set by attachment.Handler.upload.
+		public.POST("/files/echo-len", func(c *gin.Context) {
+			b, err := io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.String(http.StatusBadRequest, "err: %v", err)
+				return
+			}
+			c.String(http.StatusOK, fmt.Sprintf("%d", len(b)))
+		})
+	}})
+
+	big := bytes.Repeat([]byte("a"), 2<<20) // 2 MiB
+
+	// A 2 MiB JSON body to a public, non-/files route is rejected: the
+	// MaxBodyBytes middleware caps the body before Gin's JSON binder can
+	// read all of it.
+	body := append([]byte(`{"v":"`), big...)
+	body = append(body, []byte(`"}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/echo", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code < 400 || w.Code >= 500 {
+		t.Fatalf("oversized body to /echo must be rejected with a 4xx, got %d", w.Code)
+	}
+
+	// The same size body to /api/v1/files/... is not wrapped by the
+	// middleware and is read in full.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/files/echo-len", bytes.NewReader(big))
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != fmt.Sprintf("%d", len(big)) {
+		t.Fatalf("/api/v1/files must not be size-capped by MaxBodyBytes: %d %q", w.Code, w.Body.String())
 	}
 }
 

@@ -106,13 +106,18 @@ type Page struct {
 func (p Page) Limit() int32  { return int32(p.PageSize) }
 func (p Page) Offset() int32 { return int32((p.Page - 1) * p.PageSize) }
 
+// maxPage bounds the page query param. int32((p.Page - 1) * p.PageSize) in
+// Offset would otherwise wrap for a very large page, producing a negative
+// OFFSET and a database error instead of a clean validation error.
+const maxPage = 1_000_000
+
 // ParsePage reads page and page_size query params with defaults 1 and 25.
 func ParsePage(c *gin.Context) (Page, error) {
 	p := Page{Page: 1, PageSize: 25}
 	if v := c.Query("page"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return Page{}, apperr.Validation("page", "must be a positive integer")
+		if err != nil || n < 1 || n > maxPage {
+			return Page{}, apperr.Validation("page", "must be a positive integer no greater than 1000000")
 		}
 		p.Page = n
 	}
