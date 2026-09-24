@@ -81,6 +81,9 @@ type Event struct {
 func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in ReplyInput) (*Entry, error) {
 	var out *Entry
 	err := db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		if err := q.LockTicket(ctx, id); err != nil {
+			return err
+		}
 		row, err := loadVisible(ctx, q, p, id)
 		if err != nil {
 			return err
@@ -119,6 +122,9 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 func (s *service) Note(ctx context.Context, p auth.Principal, id int64, in NoteInput) (*Entry, error) {
 	var out *Entry
 	err := db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		if err := q.LockTicket(ctx, id); err != nil {
+			return err
+		}
 		if _, err := loadVisible(ctx, q, p, id); err != nil {
 			return err
 		}
@@ -283,6 +289,9 @@ func (s *service) Events(ctx context.Context, p auth.Principal, id int64) ([]Eve
 func (s *service) mutate(ctx context.Context, p auth.Principal, id int64, fn func(q *db.Queries, row db.GetTicketRow) error) (*Ticket, error) {
 	var out *Ticket
 	err := db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		if err := q.LockTicket(ctx, id); err != nil {
+			return err
+		}
 		row, err := loadVisible(ctx, q, p, id)
 		if err != nil {
 			return err
@@ -342,6 +351,9 @@ func attachFiles(ctx context.Context, q *db.Queries, entryID int64, fileIDs []in
 			return fmt.Errorf("%w: file %d is already attached", apperr.ErrConflict, fid)
 		}
 		if err := q.CreateAttachment(ctx, db.CreateAttachmentParams{ThreadEntryID: entryID, FileID: fid}); err != nil {
+			if db.IsUniqueViolation(err) {
+				return fmt.Errorf("%w: file %d is already attached", apperr.ErrConflict, fid)
+			}
 			return err
 		}
 	}

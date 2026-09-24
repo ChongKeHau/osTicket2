@@ -11,6 +11,9 @@ INSERT INTO ticket (number, subject, status_id, dept_id, topic_id, priority_id,
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, clock_timestamp(), clock_timestamp(), clock_timestamp())
 RETURNING id;
 
+-- name: LockTicket :exec
+SELECT id FROM ticket WHERE id = $1 FOR UPDATE;
+
 -- name: GetTicket :one
 SELECT t.id, t.number, t.subject,
        t.status_id, s.name AS status_name, s.state AS status_state,

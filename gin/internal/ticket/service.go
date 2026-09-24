@@ -225,6 +225,9 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 	}
 	var out *Ticket
 	err := db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		if err := q.LockTicket(ctx, id); err != nil {
+			return err
+		}
 		if _, err := loadVisible(ctx, q, p, id); err != nil {
 			return err
 		}

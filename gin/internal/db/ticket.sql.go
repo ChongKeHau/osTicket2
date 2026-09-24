@@ -378,6 +378,15 @@ func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Lis
 	return items, nil
 }
 
+const lockTicket = `-- name: LockTicket :exec
+SELECT id FROM ticket WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockTicket(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, lockTicket, id)
+	return err
+}
+
 const nextTicketNumber = `-- name: NextTicketNumber :one
 SELECT nextval('ticket_number_seq')::bigint
 `

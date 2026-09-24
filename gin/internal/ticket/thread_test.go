@@ -247,3 +247,30 @@ func TestEvents(t *testing.T) {
 		t.Fatalf("invisible events: %v", err)
 	}
 }
+
+// TestAttachmentUniqueConstraint proves the attachment_file_idx unique index (not
+// just the application-level IsFileAttached check) stops a file from being
+// attached to two entries, so a race between two concurrent attach requests for
+// the same file cannot both succeed.
+func TestAttachmentUniqueConstraint(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	entryA, err := f.svc.Note(f.ctx, f.agent, tk.ID, NoteInput{Body: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entryB, err := f.svc.Note(f.ctx, f.agent, tk.ID, NoteInput{Body: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fl := f.file(t, "d.txt")
+	if err := f.q.CreateAttachment(f.ctx, db.CreateAttachmentParams{ThreadEntryID: entryA.ID, FileID: fl.ID}); err != nil {
+		t.Fatal(err)
+	}
+	err = db.WithTx(f.ctx, f.tx, func(q *db.Queries) error {
+		return q.CreateAttachment(f.ctx, db.CreateAttachmentParams{ThreadEntryID: entryB.ID, FileID: fl.ID})
+	})
+	if !db.IsUniqueViolation(err) {
+		t.Fatalf("expected unique violation, got %v", err)
+	}
+}

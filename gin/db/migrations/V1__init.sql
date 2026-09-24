@@ -156,4 +156,4 @@ CREATE TABLE attachment (
   updated_at       timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (thread_entry_id, file_id)
 );
-CREATE INDEX attachment_file_idx ON attachment (file_id);
+CREATE UNIQUE INDEX attachment_file_idx ON attachment (file_id);
