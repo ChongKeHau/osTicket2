@@ -68,6 +68,15 @@ func (q *Queries) CreateStaff(ctx context.Context, arg CreateStaffParams) (Staff
 	return i, err
 }
 
+const deleteStaffDepartments = `-- name: DeleteStaffDepartments :exec
+DELETE FROM staff_department WHERE staff_id = $1
+`
+
+func (q *Queries) DeleteStaffDepartments(ctx context.Context, staffID int64) error {
+	_, err := q.db.Exec(ctx, deleteStaffDepartments, staffID)
+	return err
+}
+
 const getStaff = `-- name: GetStaff :one
 SELECT id, username, email, password_hash, first_name, last_name, is_admin, is_active, primary_dept_id, created_at, updated_at FROM staff WHERE id = $1
 `
@@ -114,6 +123,42 @@ func (q *Queries) GetStaffByUsername(ctx context.Context, username string) (Staf
 	return i, err
 }
 
+const listStaff = `-- name: ListStaff :many
+SELECT id, username, email, password_hash, first_name, last_name, is_admin, is_active, primary_dept_id, created_at, updated_at FROM staff ORDER BY username
+`
+
+func (q *Queries) ListStaff(ctx context.Context) ([]Staff, error) {
+	rows, err := q.db.Query(ctx, listStaff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Staff{}
+	for rows.Next() {
+		var i Staff
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.FirstName,
+			&i.LastName,
+			&i.IsAdmin,
+			&i.IsActive,
+			&i.PrimaryDeptID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaffDepartmentIDs = `-- name: ListStaffDepartmentIDs :many
 SELECT dept_id FROM staff_department WHERE staff_id = $1 ORDER BY dept_id
 `
@@ -136,4 +181,91 @@ func (q *Queries) ListStaffDepartmentIDs(ctx context.Context, staffID int64) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const setStaffPassword = `-- name: SetStaffPassword :execrows
+UPDATE staff SET password_hash = $2, updated_at = now() WHERE id = $1
+`
+
+type SetStaffPasswordParams struct {
+	ID           int64
+	PasswordHash string
+}
+
+func (q *Queries) SetStaffPassword(ctx context.Context, arg SetStaffPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setStaffPassword, arg.ID, arg.PasswordHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const staffCanSeeDept = `-- name: StaffCanSeeDept :one
+SELECT EXISTS (
+  SELECT 1 FROM staff s
+  LEFT JOIN staff_department sd ON sd.staff_id = s.id AND sd.dept_id = $1
+  WHERE s.id = $2 AND (s.is_admin OR s.primary_dept_id = $1 OR sd.dept_id IS NOT NULL)
+)::boolean AS can_see
+`
+
+type StaffCanSeeDeptParams struct {
+	DeptID  int64
+	StaffID int64
+}
+
+func (q *Queries) StaffCanSeeDept(ctx context.Context, arg StaffCanSeeDeptParams) (bool, error) {
+	row := q.db.QueryRow(ctx, staffCanSeeDept, arg.DeptID, arg.StaffID)
+	var can_see bool
+	err := row.Scan(&can_see)
+	return can_see, err
+}
+
+const updateStaff = `-- name: UpdateStaff :one
+UPDATE staff
+SET email = COALESCE($1, email),
+    first_name = COALESCE($2, first_name),
+    last_name = COALESCE($3, last_name),
+    is_admin = COALESCE($4, is_admin),
+    is_active = COALESCE($5, is_active),
+    primary_dept_id = COALESCE($6, primary_dept_id),
+    updated_at = now()
+WHERE id = $7
+RETURNING id, username, email, password_hash, first_name, last_name, is_admin, is_active, primary_dept_id, created_at, updated_at
+`
+
+type UpdateStaffParams struct {
+	Email         *string
+	FirstName     *string
+	LastName      *string
+	IsAdmin       *bool
+	IsActive      *bool
+	PrimaryDeptID *int64
+	ID            int64
+}
+
+func (q *Queries) UpdateStaff(ctx context.Context, arg UpdateStaffParams) (Staff, error) {
+	row := q.db.QueryRow(ctx, updateStaff,
+		arg.Email,
+		arg.FirstName,
+		arg.LastName,
+		arg.IsAdmin,
+		arg.IsActive,
+		arg.PrimaryDeptID,
+		arg.ID,
+	)
+	var i Staff
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.PrimaryDeptID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
