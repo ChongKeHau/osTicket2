@@ -9,6 +9,58 @@ import (
 	"context"
 )
 
+const countDepartmentReferences = `-- name: CountDepartmentReferences :one
+SELECT (
+  (SELECT count(*) FROM ticket t WHERE t.dept_id = $1) +
+  (SELECT count(*) FROM staff s WHERE s.primary_dept_id = $1) +
+  (SELECT count(*) FROM staff_department sd WHERE sd.dept_id = $1) +
+  (SELECT count(*) FROM help_topic h WHERE h.dept_id = $1)
+)::bigint AS refs
+`
+
+func (q *Queries) CountDepartmentReferences(ctx context.Context, deptID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countDepartmentReferences, deptID)
+	var refs int64
+	err := row.Scan(&refs)
+	return refs, err
+}
+
+const createDepartment = `-- name: CreateDepartment :one
+INSERT INTO department (name, is_public, manager_id) VALUES ($1, $2, $3) RETURNING id, name, is_public, manager_id, created_at, updated_at
+`
+
+type CreateDepartmentParams struct {
+	Name      string
+	IsPublic  bool
+	ManagerID *int64
+}
+
+func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error) {
+	row := q.db.QueryRow(ctx, createDepartment, arg.Name, arg.IsPublic, arg.ManagerID)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.IsPublic,
+		&i.ManagerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteDepartment = `-- name: DeleteDepartment :execrows
+DELETE FROM department WHERE id = $1
+`
+
+func (q *Queries) DeleteDepartment(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDepartment, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const firstDepartment = `-- name: FirstDepartment :one
 SELECT id, name, is_public, manager_id, created_at, updated_at FROM department ORDER BY id LIMIT 1
 `
@@ -33,6 +85,73 @@ SELECT id, name, is_public, manager_id, created_at, updated_at FROM department W
 
 func (q *Queries) GetDepartment(ctx context.Context, id int64) (Department, error) {
 	row := q.db.QueryRow(ctx, getDepartment, id)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.IsPublic,
+		&i.ManagerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listDepartments = `-- name: ListDepartments :many
+SELECT id, name, is_public, manager_id, created_at, updated_at FROM department ORDER BY name
+`
+
+func (q *Queries) ListDepartments(ctx context.Context) ([]Department, error) {
+	rows, err := q.db.Query(ctx, listDepartments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Department{}
+	for rows.Next() {
+		var i Department
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.IsPublic,
+			&i.ManagerID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDepartment = `-- name: UpdateDepartment :one
+UPDATE department
+SET name = COALESCE($1, name),
+    is_public = COALESCE($2, is_public),
+    manager_id = COALESCE($3, manager_id),
+    updated_at = now()
+WHERE id = $4
+RETURNING id, name, is_public, manager_id, created_at, updated_at
+`
+
+type UpdateDepartmentParams struct {
+	Name      *string
+	IsPublic  *bool
+	ManagerID *int64
+	ID        int64
+}
+
+func (q *Queries) UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error) {
+	row := q.db.QueryRow(ctx, updateDepartment,
+		arg.Name,
+		arg.IsPublic,
+		arg.ManagerID,
+		arg.ID,
+	)
 	var i Department
 	err := row.Scan(
 		&i.ID,
