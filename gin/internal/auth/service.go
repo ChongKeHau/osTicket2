@@ -43,12 +43,16 @@ func (s *Service) Login(ctx context.Context, username, password string) (*Sessio
 	q := db.New(s.db)
 	st, err := q.GetStaffByUsername(ctx, username)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// Always pay the bcrypt compare, even for an unknown username, so
+		// response time doesn't reveal whether the username exists.
+		CheckPassword(ensureDummyHash(), password)
 		return nil, apperr.ErrUnauthorized
 	}
 	if err != nil {
 		return nil, err
 	}
-	if !st.IsActive || !CheckPassword(st.PasswordHash, password) {
+	ok := CheckPassword(st.PasswordHash, password)
+	if !ok || !st.IsActive {
 		return nil, apperr.ErrUnauthorized
 	}
 	return s.issue(ctx, q, st)

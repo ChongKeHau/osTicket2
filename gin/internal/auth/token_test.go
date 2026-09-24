@@ -49,12 +49,34 @@ func TestAccessTokenRejections(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// alg: none but otherwise well-formed (valid exp), isolating the HS256
+	// algorithm restriction from the "no exp" case above.
+	noneWithExp := jwt.NewWithClaims(jwt.SigningMethodNone, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "1", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+	})
+	noneWithExpRaw, err := noneWithExp.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// HS512, signed with the correct secret and a valid exp/sub: rejected
+	// purely because it isn't HS256, not because the signature is wrong.
+	hs512 := jwt.NewWithClaims(jwt.SigningMethodHS512, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "1", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+	})
+	hs512Raw, err := hs512.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for name, tok := range map[string]string{
-		"expired":   old,
-		"wrong key": other,
-		"alg none":  noneRaw,
-		"garbage":   "not.a.jwt",
-		"tampered":  raw[:len(raw)-3] + "abc",
+		"expired":           old,
+		"wrong key":         other,
+		"alg none":          noneRaw,
+		"alg none with exp": noneWithExpRaw,
+		"alg HS512":         hs512Raw,
+		"garbage":           "not.a.jwt",
+		"tampered":          raw[:len(raw)-3] + "abc",
 	} {
 		if _, err := tk.ParseAccess(tok); !errors.Is(err, apperr.ErrUnauthorized) {
 			t.Errorf("%s: expected ErrUnauthorized, got %v", name, err)
