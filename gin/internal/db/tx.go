@@ -14,6 +14,9 @@ type Beginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
+// DB exposes the underlying connection for tests and raw statements.
+func (q *Queries) DB() DBTX { return q.db }
+
 // WithTx runs fn inside a transaction and commits if fn returns nil.
 func WithTx(ctx context.Context, b Beginner, fn func(q *Queries) error) error {
 	tx, err := b.Begin(ctx)
