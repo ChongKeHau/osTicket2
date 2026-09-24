@@ -16,6 +16,9 @@ import (
 type fakeSvc struct {
 	lastFilter ListFilter
 	lastCreate CreateInput
+	lastAfter  int64
+	lastLimit  int
+	lastAssign *int64
 }
 
 func (f *fakeSvc) Create(_ context.Context, p auth.Principal, in CreateInput) (*Ticket, error) {
@@ -40,6 +43,33 @@ func (f *fakeSvc) ListPriorities(context.Context) ([]Priority, error) {
 }
 func (f *fakeSvc) ListStatuses(context.Context) ([]Status, error) {
 	return []Status{{ID: 1, Name: "Open", State: "open"}}, nil
+}
+
+func (f *fakeSvc) Reply(_ context.Context, p auth.Principal, id int64, in ReplyInput) (*Entry, error) {
+	return &Entry{ID: 10, TicketID: id, Type: "response", Body: in.Body}, nil
+}
+func (f *fakeSvc) Note(_ context.Context, p auth.Principal, id int64, in NoteInput) (*Entry, error) {
+	return &Entry{ID: 11, TicketID: id, Type: "note", Body: in.Body}, nil
+}
+func (f *fakeSvc) Thread(_ context.Context, p auth.Principal, id int64, after int64, limit int) (*Thread, error) {
+	f.lastAfter, f.lastLimit = after, limit
+	return &Thread{Items: []Entry{}}, nil
+}
+func (f *fakeSvc) SetStatus(_ context.Context, p auth.Principal, id int64, statusID int64) (*Ticket, error) {
+	if statusID == 99 {
+		return nil, apperr.Validation("status_id", "unknown status")
+	}
+	return &Ticket{ID: id}, nil
+}
+func (f *fakeSvc) Assign(_ context.Context, p auth.Principal, id int64, staffID *int64) (*Ticket, error) {
+	f.lastAssign = staffID
+	return &Ticket{ID: id}, nil
+}
+func (f *fakeSvc) Transfer(_ context.Context, p auth.Principal, id int64, deptID int64) (*Ticket, error) {
+	return &Ticket{ID: id}, nil
+}
+func (f *fakeSvc) Events(_ context.Context, p auth.Principal, id int64) ([]Event, error) {
+	return []Event{{ID: 1, Kind: "created"}}, nil
 }
 
 func newRouter(f *fakeSvc) *gin.Engine {

@@ -23,6 +23,14 @@ type Service interface {
 	Update(ctx context.Context, p auth.Principal, id int64, in UpdateInput) (*Ticket, error)
 	ListPriorities(ctx context.Context) ([]Priority, error)
 	ListStatuses(ctx context.Context) ([]Status, error)
+
+	Reply(ctx context.Context, p auth.Principal, id int64, in ReplyInput) (*Entry, error)
+	Note(ctx context.Context, p auth.Principal, id int64, in NoteInput) (*Entry, error)
+	Thread(ctx context.Context, p auth.Principal, id int64, after int64, limit int) (*Thread, error)
+	SetStatus(ctx context.Context, p auth.Principal, id int64, statusID int64) (*Ticket, error)
+	Assign(ctx context.Context, p auth.Principal, id int64, staffID *int64) (*Ticket, error)
+	Transfer(ctx context.Context, p auth.Principal, id int64, deptID int64) (*Ticket, error)
+	Events(ctx context.Context, p auth.Principal, id int64) ([]Event, error)
 }
 
 type service struct{ db db.Beginner }
@@ -404,6 +412,3 @@ func event(ctx context.Context, q *db.Queries, ticketID int64, staffID *int64, k
 	}
 	return q.CreateTicketEvent(ctx, db.CreateTicketEventParams{TicketID: ticketID, StaffID: staffID, Kind: kind, Data: b})
 }
-
-// attachFiles is implemented in thread.go (Task 10). Until then it is a no-op
-// that rejects any file ids so the create path stays honest.
