@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ticket
+      POSTGRES_USER: ticket
+      POSTGRES_PASSWORD: ticket
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticket"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  flyway:
+    image: flyway/flyway:10
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/flyway/sql:ro
+    command: -url=jdbc:postgresql://postgres:5432/ticket -user=ticket -password=ticket -connectRetries=10 migrate
+volumes:
+  pgdata: {}
