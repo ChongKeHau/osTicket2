@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const createAttachment = `-- name: CreateAttachment :exec
@@ -65,6 +66,31 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	return i, err
 }
 
+const deleteFile = `-- name: DeleteFile :exec
+DELETE FROM file WHERE id = $1
+`
+
+func (q *Queries) DeleteFile(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteFile, id)
+	return err
+}
+
+const fileTicketDeptID = `-- name: FileTicketDeptID :one
+SELECT t.dept_id
+FROM attachment a
+JOIN thread_entry te ON te.id = a.thread_entry_id
+JOIN ticket t ON t.id = te.ticket_id
+WHERE a.file_id = $1
+LIMIT 1
+`
+
+func (q *Queries) FileTicketDeptID(ctx context.Context, fileID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, fileTicketDeptID, fileID)
+	var dept_id int64
+	err := row.Scan(&dept_id)
+	return dept_id, err
+}
+
 const getFile = `-- name: GetFile :one
 SELECT id, key, name, mime, size, sha256, backend, uploaded_by, created_at, updated_at FROM file WHERE id = $1
 `
@@ -96,4 +122,42 @@ func (q *Queries) IsFileAttached(ctx context.Context, fileID int64) (bool, error
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const listUnattachedFilesBefore = `-- name: ListUnattachedFilesBefore :many
+SELECT f.id, f.key, f.name, f.mime, f.size, f.sha256, f.backend, f.uploaded_by, f.created_at, f.updated_at FROM file f
+WHERE f.created_at < $1
+  AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id)
+ORDER BY f.id
+`
+
+func (q *Queries) ListUnattachedFilesBefore(ctx context.Context, createdAt time.Time) ([]File, error) {
+	rows, err := q.db.Query(ctx, listUnattachedFilesBefore, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []File{}
+	for rows.Next() {
+		var i File
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Mime,
+			&i.Size,
+			&i.Sha256,
+			&i.Backend,
+			&i.UploadedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
