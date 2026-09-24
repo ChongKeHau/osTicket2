@@ -26,5 +26,7 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id)
 ORDER BY f.id;
 
--- name: DeleteFile :exec
-DELETE FROM file WHERE id = $1;
+-- name: DeleteUnattachedFile :execrows
+DELETE FROM file f
+WHERE f.id = $1
+  AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id);

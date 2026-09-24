@@ -119,11 +119,17 @@ func (s *service) GC(ctx context.Context, olderThan time.Duration) (int, error) 
 	}
 	n := 0
 	for _, row := range rows {
+		affected, err := q.DeleteUnattachedFile(ctx, row.ID)
+		if err != nil {
+			return n, err
+		}
+		if affected == 0 {
+			// a concurrent request attached this file between the list and
+			// the delete; leave its blob alone and don't count it.
+			continue
+		}
 		if err := s.store.Delete(ctx, row.Key); err != nil {
 			return n, fmt.Errorf("delete blob %s: %w", row.Key, err)
-		}
-		if err := q.DeleteFile(ctx, row.ID); err != nil {
-			return n, err
 		}
 		n++
 	}

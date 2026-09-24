@@ -66,13 +66,18 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	return i, err
 }
 
-const deleteFile = `-- name: DeleteFile :exec
-DELETE FROM file WHERE id = $1
+const deleteUnattachedFile = `-- name: DeleteUnattachedFile :execrows
+DELETE FROM file f
+WHERE f.id = $1
+  AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id)
 `
 
-func (q *Queries) DeleteFile(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteFile, id)
-	return err
+func (q *Queries) DeleteUnattachedFile(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUnattachedFile, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const fileTicketDeptID = `-- name: FileTicketDeptID :one

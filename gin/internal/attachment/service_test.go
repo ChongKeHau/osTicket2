@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +97,21 @@ func TestUploadRules(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("rejected uploads must not leave rows: %d", n)
 	}
+	blobs := 0
+	if err := filepath.Walk(f.store.dir, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			blobs++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if blobs != 1 {
+		t.Fatalf("rejected uploads must not leave blobs on disk: %d", blobs)
+	}
 }
 
 func TestDownloadAuthorization(t *testing.T) {
@@ -138,9 +155,22 @@ func TestDownloadAuthorization(t *testing.T) {
 
 func TestGC(t *testing.T) {
 	f := newFixture(t)
-	old, _ := f.svc.Upload(f.ctx, f.agent, "old.txt", "text/plain", strings.NewReader("1"))
-	kept, _ := f.svc.Upload(f.ctx, f.agent, "kept.txt", "text/plain", strings.NewReader("2"))
-	fresh, _ := f.svc.Upload(f.ctx, f.agent, "fresh.txt", "text/plain", strings.NewReader("3"))
+	old, err := f.svc.Upload(f.ctx, f.agent, "old.txt", "text/plain", strings.NewReader("1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := f.svc.Upload(f.ctx, f.agent, "kept.txt", "text/plain", strings.NewReader("2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := f.svc.Upload(f.ctx, f.agent, "fresh.txt", "text/plain", strings.NewReader("3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRow, err := f.q.GetFile(f.ctx, old.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.tx.Exec(f.ctx, `UPDATE file SET created_at = now() - interval '2 days' WHERE id IN ($1, $2)`, old.ID, kept.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +181,9 @@ func TestGC(t *testing.T) {
 	}
 	if _, err := f.q.GetFile(f.ctx, old.ID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("old row must be gone: %v", err)
+	}
+	if _, err := f.store.Open(f.ctx, oldRow.Key); err == nil {
+		t.Fatal("old blob must be deleted")
 	}
 	for _, id := range []int64{kept.ID, fresh.ID} {
 		if _, err := f.q.GetFile(f.ctx, id); err != nil {
