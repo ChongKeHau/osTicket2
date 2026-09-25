@@ -9,15 +9,19 @@ import { ErrorBanner } from './ErrorBanner'
 import { StatusBadge } from './StatusBadge'
 import styles from './TicketHeader.module.css'
 
+function formFromTicket(ticket: Ticket) {
+  return {
+    subject: ticket.subject, priority_id: ticket.priority.id, topic_id: ticket.topic?.id ?? 0,
+    due_at: ticket.due_at ? ticket.due_at.slice(0, 16) : '', requester_name: ticket.requester_name, requester_email: ticket.requester_email,
+  }
+}
+
 export function TicketHeader({ ticket }: { ticket: Ticket }) {
   const { isAdmin, departmentIds } = useAuth()
   const { statuses, departments, staff, priorities, topics } = useReferenceData()
   const m = useTicketMutations(ticket.id)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({
-    subject: ticket.subject, priority_id: ticket.priority.id, topic_id: ticket.topic?.id ?? 0,
-    due_at: ticket.due_at ? ticket.due_at.slice(0, 16) : '', requester_name: ticket.requester_name, requester_email: ticket.requester_email,
-  })
+  const [form, setForm] = useState(formFromTicket(ticket))
   const error = m.setStatus.error ?? m.assign.error ?? m.transfer.error ?? m.update.error
   const fields = error instanceof ApiError ? error.fields : {}
   const busy = m.setStatus.isPending || m.assign.isPending || m.transfer.isPending || m.update.isPending
@@ -28,8 +32,8 @@ export function TicketHeader({ ticket }: { ticket: Ticket }) {
   function save(e: FormEvent) {
     e.preventDefault()
     m.update.mutate({
-      subject: form.subject, priority_id: form.priority_id, topic_id: form.topic_id || undefined,
-      due_at: form.due_at ? new Date(form.due_at).toISOString() : undefined,
+      subject: form.subject, priority_id: form.priority_id, topic_id: form.topic_id || null,
+      due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
       requester_name: form.requester_name, requester_email: form.requester_email,
     }, { onSuccess: () => setEditing(false) })
   }
@@ -65,7 +69,7 @@ export function TicketHeader({ ticket }: { ticket: Ticket }) {
         <dt>Due</dt><dd>{ticket.due_at ? formatDateTime(ticket.due_at) : <span className="muted">None</span>}</dd>
         {ticket.closed_at && <><dt>Closed</dt><dd>{formatDateTime(ticket.closed_at)}</dd></>}
       </dl>
-      {!editing && <button type="button" onClick={() => setEditing(true)}>Edit</button>}
+      {!editing && <button type="button" onClick={() => { setForm(formFromTicket(ticket)); setEditing(true) }}>Edit</button>}
       {editing && (
         <form onSubmit={save} className={styles.editForm}>
           <div className="field"><label htmlFor="subject">Subject</label>

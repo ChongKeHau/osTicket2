@@ -75,3 +75,29 @@ test('edit form patches subject and priority', async () => {
   await userEvent.click(screen.getByRole('button', { name: /save/i }))
   await waitFor(() => expect(body).toMatchObject({ subject: 'New subject', priority_id: 3 }))
 })
+
+test('edit form discards changes on cancel and re-shows original values on reopen', async () => {
+  renderWithProviders(<App />, { route: '/tickets/7' })
+  await screen.findByRole('heading', { name: /000007/ })
+  await userEvent.click(screen.getByRole('button', { name: /edit/i }))
+  const subject = screen.getByLabelText(/subject/i)
+  await userEvent.clear(subject)
+  await userEvent.type(subject, 'Discarded subject')
+  await userEvent.click(screen.getByRole('button', { name: /cancel/i }))
+  await userEvent.click(screen.getByRole('button', { name: /edit/i }))
+  expect(screen.getByLabelText(/subject/i)).toHaveValue(ticketFixture.subject)
+})
+
+test('edit form clears the due date to null on save', async () => {
+  let body: unknown
+  const ticketWithDue = { ...ticketFixture, due_at: '2026-09-26T10:00:00Z' }
+  server.use(http.get('/api/v1/tickets/7', () => HttpResponse.json(ticketWithDue)))
+  server.use(http.patch('/api/v1/tickets/7', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...ticketWithDue, due_at: null }) }))
+  renderWithProviders(<App />, { route: '/tickets/7' })
+  await screen.findByRole('heading', { name: /000007/ })
+  await userEvent.click(screen.getByRole('button', { name: /edit/i }))
+  const due = screen.getByLabelText(/^due$/i)
+  await userEvent.clear(due)
+  await userEvent.click(screen.getByRole('button', { name: /save/i }))
+  await waitFor(() => expect(body).toMatchObject({ due_at: null }))
+})
