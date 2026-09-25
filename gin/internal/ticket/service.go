@@ -87,7 +87,7 @@ func ticketVars(row db.GetTicketRow, agent, body, format string) mail.Vars {
 }
 
 func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) (*Ticket, error) {
-	return s.create(ctx, p, in, &p.StaffID)
+	return s.create(ctx, p, in, &p.StaffID, "")
 }
 
 func (s *service) CreateExternal(ctx context.Context, in ExternalCreateInput) (*Ticket, error) {
@@ -96,10 +96,12 @@ func (s *service) CreateExternal(ctx context.Context, in ExternalCreateInput) (*
 		Subject: in.Subject, Message: in.Body, MessageFormat: in.Format,
 		RequesterName: in.RequesterName, RequesterEmail: in.RequesterEmail,
 		DeptID: &dept, Source: "email", FileIDs: in.FileIDs, AutoSubmitted: in.AutoSubmitted,
-	}, nil)
+	}, nil, "email")
 }
 
-func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, actor *int64) (*Ticket, error) {
+// via records how the ticket was created (e.g. "email" for inbound mail) on
+// the created event's data; empty means the normal staff/API path.
+func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, actor *int64, via string) (*Ticket, error) {
 	if err := validateExtra(in.Extra); err != nil {
 		return nil, err
 	}
@@ -191,7 +193,11 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
-		if err := event(ctx, q, id, actor, db.TicketEventKindCreated, map[string]any{"number": number}); err != nil {
+		data := map[string]any{"number": number}
+		if via != "" {
+			data["via"] = via
+		}
+		if err := event(ctx, q, id, actor, db.TicketEventKindCreated, data); err != nil {
 			return err
 		}
 		if in.RequesterEmail != "" && !in.AutoSubmitted {

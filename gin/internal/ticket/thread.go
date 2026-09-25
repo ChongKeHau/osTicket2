@@ -366,13 +366,20 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 			return err
 		}
 		var to []mail.Recipient
+		assignedActive := false
 		if row.AssignedStaffID != nil {
 			st, err := q.GetStaff(ctx, *row.AssignedStaffID)
 			if err != nil {
 				return err
 			}
-			to = append(to, mail.Recipient{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email})
-		} else {
+			if st.IsActive {
+				assignedActive = true
+				to = append(to, mail.Recipient{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email})
+			}
+		}
+		if !assignedActive {
+			// Unassigned, or assigned to a now-inactive staff member: alert
+			// every active staff member of the department instead.
 			members, err := q.ListActiveStaffForDept(ctx, row.DeptID)
 			if err != nil {
 				return err

@@ -2,6 +2,7 @@ package ticket
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -46,6 +47,18 @@ func TestCreateEnqueuesAutoresponse(t *testing.T) {
 	}
 	if rows[0].Subject != "[#"+tk.Number+"] Printer" {
 		t.Fatalf("subject = %q", rows[0].Subject)
+	}
+	// A staff-created ticket's created event carries no "via" key.
+	events, err := f.svc.Events(f.ctx, f.admin, tk.ID)
+	if err != nil || len(events) != 1 || events[0].Kind != "created" {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(events[0].Data, &data); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := data["via"]; ok {
+		t.Fatalf("staff create must not set via: %+v", data)
 	}
 }
 
@@ -108,6 +121,13 @@ func TestCreateExternalAndAppendMessage(t *testing.T) {
 	if err != nil || len(events) != 1 || events[0].Kind != "created" || events[0].Staff != nil {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
+	var data map[string]any
+	if err := json.Unmarshal(events[0].Data, &data); err != nil {
+		t.Fatal(err)
+	}
+	if data["via"] != "email" {
+		t.Fatalf("external create must set via=email: %+v", data)
+	}
 	// Unassigned: every active staff member of the department is alerted (admin and agent, not other).
 	entry, err := f.svc.AppendMessage(f.ctx, tk.ID, MessageInput{Poster: "Pat", Body: "More info", Format: "text"})
 	if err != nil {
@@ -146,6 +166,29 @@ func TestCreateExternalAndAppendMessage(t *testing.T) {
 	}
 	if _, err := f.svc.AppendMessage(f.ctx, 999999, MessageInput{Poster: "x", Body: "y", Format: "text"}); err == nil {
 		t.Fatal("unknown ticket must fail")
+	}
+}
+
+func TestAppendMessageSkipsInactiveAssignee(t *testing.T) {
+	f := mailFixture(t)
+	tk, err := f.svc.CreateExternal(f.ctx, ExternalCreateInput{Subject: "By mail", Body: "Hi", Format: "text", RequesterName: "Pat", RequesterEmail: "pat@example.test", DeptID: f.support.ID, AutoSubmitted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentID := f.staff["agent"].ID
+	if _, err := f.svc.Assign(f.ctx, f.admin, tk.ID, &agentID); err != nil {
+		t.Fatal(err)
+	}
+	_ = outbox(t, f) // consume the assigned_alert
+	if _, err := f.tx.Exec(f.ctx, `UPDATE staff SET is_active = false WHERE id = $1`, agentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.AppendMessage(f.ctx, tk.ID, MessageInput{Poster: "Pat", Body: "Again", Format: "text"}); err != nil {
+		t.Fatal(err)
+	}
+	rows := outbox(t, f)
+	if len(rows) != 1 || rows[0].ToAddress != "admin@x.test" || rows[0].TemplateKey != "message_alert" {
+		t.Fatalf("inactive-assignee fallback rows = %+v", rows)
 	}
 }
 
