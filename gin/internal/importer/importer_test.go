@@ -64,11 +64,17 @@ func TestRunEndToEnd(t *testing.T) {
 		t.Fatalf("staff login = %+v, %v", st, err)
 	}
 	// Sequences were reset: a new ticket gets an id above the imported ones.
+	// setval is not transactional, so this test's own ResetSequences call
+	// permanently advances the shared test database's ticket sequence even
+	// though the rest of this transaction rolls back. The assertion is
+	// therefore relative (above the highest imported id, currently 5) rather
+	// than an absolute id.
 	var id int64
 	if err := tx.QueryRow(ctx, `INSERT INTO ticket (number, subject, status_id, dept_id, priority_id, requester_email)
 		VALUES ('900000', 'new', (SELECT id FROM ticket_status LIMIT 1), (SELECT id FROM department LIMIT 1), (SELECT id FROM ticket_priority LIMIT 1), 'n@example.test') RETURNING id`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("new ticket id after reset = %d", id)
 	if id <= 5 {
 		t.Fatalf("new ticket id = %d, want above the imported ids", id)
 	}

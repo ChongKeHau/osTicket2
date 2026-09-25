@@ -151,6 +151,15 @@ func (s *Sink) Preflight(ctx context.Context) error {
 }
 
 // ResetSequences moves every identity sequence past the highest inserted id.
+//
+// setval is not transactional: even inside a transaction that later rolls
+// back, the sequence advance survives. A test that calls this (directly or
+// via Run) therefore permanently moves the shared test database's identity
+// sequences forward, regardless of the rollback. Tests must never assert an
+// absolute generated id after a call that reaches here (assert relative to
+// the highest id seen instead) and must not run with t.Parallel() against
+// the shared database, since concurrent tests would race on the same
+// sequences.
 func (s *Sink) ResetSequences(ctx context.Context) error {
 	if s.dryRun {
 		return nil

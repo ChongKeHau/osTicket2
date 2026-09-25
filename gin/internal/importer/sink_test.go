@@ -114,6 +114,10 @@ func TestPreflightRefusesExtraDepartment(t *testing.T) {
 	}
 }
 
+// TestResetSequences calls ResetSequences itself, after inserting a row with
+// a known id in the same transaction, so the expected next id (901) holds
+// regardless of what earlier tests left the shared sequences at; it does not
+// depend on run ordering with other tests.
 func TestResetSequences(t *testing.T) {
 	tx := testutil.Tx(t)
 	ctx := context.Background()
