@@ -1,6 +1,6 @@
-import DOMPurify from 'dompurify'
 import type { Entry } from '../api/types'
 import { formatDateTime } from '../lib/format'
+import { sanitizeHtml } from '../lib/sanitize'
 import { AttachmentList } from './AttachmentList'
 import styles from './ThreadEntry.module.css'
 
@@ -16,7 +16,7 @@ export function ThreadEntry({ entry }: { entry: Entry }) {
         {entry.title && <em>{entry.title}</em>}
       </header>
       {entry.format === 'html'
-        ? <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.body, { USE_PROFILES: { html: true } }) }} />
+        ? <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.body) }} />
         : <pre className="pre">{entry.body}</pre>}
       <AttachmentList attachments={entry.attachments} />
     </article>

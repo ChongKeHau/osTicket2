@@ -22,14 +22,18 @@ test('renders entries oldest first with type badges and attachments', async () =
 
 test('sanitises HTML bodies', async () => {
   server.use(http.get('/api/v1/tickets/7/thread', () => HttpResponse.json({
-    items: [{ ...entryFixtures[0], body: '<p>hi</p><script>window.__pwned=1</script><img src=x onerror="window.__pwned=2">' }], next_after: null,
+    items: [{
+      ...entryFixtures[0],
+      body: '<p>hi</p><script>window.__pwned=1</script><img src=x onerror="window.__pwned=2"><style>body{display:none}</style><a href="https://example.test">link</a>',
+    }], next_after: null,
   })))
   renderWithProviders(<Thread ticketId={7} />)
   const item = await screen.findByRole('article')
   expect(item.querySelector('script')).toBeNull()
   expect(item.querySelector('img')?.getAttribute('onerror')).toBeNull()
   expect(item).toHaveTextContent('hi')
-  expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined()
+  expect(item.querySelector('style')).toBeNull()
+  expect(item.querySelector('a')?.getAttribute('target')).toBe('_blank')
 })
 
 test('text bodies keep line breaks and are not parsed as HTML', async () => {
