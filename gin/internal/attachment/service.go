@@ -51,15 +51,22 @@ func (s *service) Upload(ctx context.Context, p auth.Principal, name, mime strin
 	if name == "" || name == "." || name == "/" || name == ".." {
 		return nil, apperr.Validation("file", "filename is required")
 	}
+	// Drop any invalid UTF-8 first, then truncate over-length names on a
+	// rune boundary, keeping the tail (not the head) so an extension like
+	// .txt/.pdf survives.
+	name = strings.ToValidUTF8(name, "")
 	if len(name) > 255 {
-		// Truncate to at most 255 bytes without splitting a multi-byte rune:
-		// trim back byte by byte (at most 3 times) until the tail is valid
-		// UTF-8 again.
-		truncated := name[:255]
-		for len(truncated) > 0 && !utf8.ValidString(truncated) {
-			truncated = truncated[:len(truncated)-1]
+		i := len(name) - 255
+		for i < len(name) && !utf8.RuneStart(name[i]) {
+			i++
 		}
-		name = truncated
+		name = name[i:]
+	}
+	// Re-check after cleaning: an all-invalid or now-degenerate name (e.g.
+	// entirely invalid UTF-8) must still be rejected, not silently uploaded
+	// as an empty name.
+	if name == "" || name == "." || name == "/" || name == ".." {
+		return nil, apperr.Validation("file", "filename is required")
 	}
 	mime = strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
 	if !s.allowed[mime] {

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,6 +35,14 @@ func (f *fakeSvc) LoadPrincipal(_ context.Context, id int64) (Principal, error) 
 func router(f *fakeSvc, tk *Tokens) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// Mirror server.New's default: trust no proxy, so gin.Context.ClientIP()
+	// (which the login rate limiter keys on) can't be steered by a
+	// client-supplied X-Forwarded-For/X-Real-IP. A bare gin.New() trusts
+	// every proxy by default, which would make TestLoginRateLimit* pass for
+	// the wrong reason.
+	if err := r.SetTrustedProxies(nil); err != nil {
+		panic(err)
+	}
 	api := r.Group("/api/v1")
 	public := api.Group("")
 	private := api.Group("", RequireAuth(tk, f))
@@ -175,6 +184,35 @@ func TestLoginRateLimiting(t *testing.T) {
 	}
 	if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"carol","password":"bad"}`, ""); w.Code != 401 {
 		t.Fatalf("a success must reset the counter, got rate limited: %d", w.Code)
+	}
+}
+
+// TestLoginRateLimitIgnoresForgedXForwardedFor proves the rate limiter's
+// client-IP key can't be reset by rotating X-Forwarded-For: with no trusted
+// proxies configured (router()'s default, matching server.New's), gin's
+// ClientIP() ignores the header and always returns the actual remote
+// address, so 10 failures from the same connection still trip the limit
+// even though each request claims a different forged IP.
+func TestLoginRateLimitIgnoresForgedXForwardedFor(t *testing.T) {
+	f := &fakeSvc{login: func(u, p string) (*Session, error) { return nil, apperr.ErrUnauthorized }}
+	r := router(f, NewTokens(secret, time.Minute))
+
+	post := func(forgedIP string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"dave","password":"bad"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", forgedIP)
+		req.RemoteAddr = "192.0.2.50:1234" // the one real, constant remote address
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	for i := 0; i < 10; i++ {
+		if w := post(fmt.Sprintf("203.0.113.%d", i)); w.Code != 401 {
+			t.Fatalf("attempt %d with forged IP: %d", i+1, w.Code)
+		}
+	}
+	if w := post("203.0.113.250"); w.Code != 429 {
+		t.Fatalf("11th attempt, still with a fresh forged X-Forwarded-For, must be rate limited: %d", w.Code)
 	}
 }
 

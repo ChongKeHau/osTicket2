@@ -34,6 +34,7 @@ func TestLoadOverrides(t *testing.T) {
 		"CORS_ORIGINS":     "http://a.test, http://b.test,",
 		"MAX_UPLOAD_BYTES": "1024",
 		"ALLOWED_MIME":     "image/png,text/plain",
+		"TRUSTED_PROXIES":  "10.0.0.1, 10.0.0.0/8,",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -46,6 +47,25 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if len(cfg.AllowedMIME) != 2 {
 		t.Fatalf("mime wrong: %v", cfg.AllowedMIME)
+	}
+	if len(cfg.TrustedProxies) != 2 || cfg.TrustedProxies[0] != "10.0.0.1" || cfg.TrustedProxies[1] != "10.0.0.0/8" {
+		t.Fatalf("trusted proxies wrong: %v", cfg.TrustedProxies)
+	}
+}
+
+// TestLoadDefaultsNoTrustedProxies proves TrustedProxies defaults to empty:
+// with none configured, server.New must pass an empty slice to
+// SetTrustedProxies, which trusts no proxy.
+func TestLoadDefaultsNoTrustedProxies(t *testing.T) {
+	cfg, err := Load(env(map[string]string{
+		"DATABASE_URL": "postgres://x",
+		"JWT_SECRET":   strings.Repeat("s", 32),
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.TrustedProxies) != 0 {
+		t.Fatalf("trusted proxies must default to empty: %v", cfg.TrustedProxies)
 	}
 }
 

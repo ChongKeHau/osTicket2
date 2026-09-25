@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -19,6 +20,12 @@ type Pinger interface {
 type Options struct {
 	Pinger      Pinger
 	CORSOrigins []string
+	// TrustedProxies are passed straight to (*gin.Engine).SetTrustedProxies.
+	// Nil/empty (the default) trusts no proxy, so gin.Context.ClientIP()
+	// always returns the socket address rather than an X-Forwarded-For /
+	// X-Real-IP value the client controls -- important for anything keyed by
+	// client IP, such as the login rate limiter.
+	TrustedProxies []string
 	// RequireAuth guards the private group. Nil fails closed: every private
 	// route returns 401, rather than silently admitting unauthenticated
 	// requests. Tests that need an open private group must pass an explicit
@@ -31,6 +38,16 @@ type Options struct {
 func New(o Options) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
+	// SetTrustedProxies(nil) for an empty/nil o.TrustedProxies: gin treats a
+	// nil trustedCIDRs list as "trust nothing", which is what we want by
+	// default (see the Options.TrustedProxies doc comment).
+	trusted := o.TrustedProxies
+	if len(trusted) == 0 {
+		trusted = nil
+	}
+	if err := r.SetTrustedProxies(trusted); err != nil {
+		panic(fmt.Errorf("invalid TrustedProxies: %w", err))
+	}
 	r.Use(RequestID(), Logger(), Recovery(), CORS(o.CORSOrigins), MaxBodyBytes())
 	r.GET("/health", health(o.Pinger))
 	api := r.Group("/api/v1")

@@ -47,13 +47,15 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	key := in.Username + "|" + c.ClientIP()
+	// allow reserves the attempt slot atomically with the check (see its
+	// doc comment): a failed login leaves the reservation in place, and
+	// reset below undoes it on success, so only failures count.
 	if !h.limiter.allow(key) {
 		httpx.Fail(c, apperr.ErrRateLimited)
 		return
 	}
 	sess, err := h.svc.Login(c.Request.Context(), in.Username, in.Password)
 	if err != nil {
-		h.limiter.recordFailure(key)
 		httpx.Fail(c, err)
 		return
 	}

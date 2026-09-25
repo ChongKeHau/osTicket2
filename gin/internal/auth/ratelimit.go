@@ -32,8 +32,13 @@ func newLoginRateLimiter() *loginRateLimiter {
 	return &loginRateLimiter{now: time.Now, entries: make(map[string]*loginRateEntry)}
 }
 
-// allow reports whether an attempt for key may proceed: false means the key
-// has already reached loginRateLimitMax failures within the current window.
+// allow reports whether an attempt for key may proceed, and if so reserves
+// it: the check and the increment happen under the same lock, so a burst of
+// concurrent calls for the same key can never together admit more than
+// loginRateLimitMax. Every admitted call counts, whether the login that
+// follows succeeds or fails; a successful login must call reset(key)
+// afterward so only failures count towards the next window, per the
+// package's "only failed logins count" contract.
 func (l *loginRateLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -41,23 +46,14 @@ func (l *loginRateLimiter) allow(key string) bool {
 	l.pruneLocked(now)
 	e, ok := l.entries[key]
 	if !ok || now.After(e.windowEnds) {
-		return true
-	}
-	return e.count < loginRateLimitMax
-}
-
-// recordFailure counts one failed attempt against key, starting a fresh
-// window if the previous one (if any) has expired.
-func (l *loginRateLimiter) recordFailure(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.now()
-	e, ok := l.entries[key]
-	if !ok || now.After(e.windowEnds) {
 		e = &loginRateEntry{windowEnds: now.Add(loginRateLimitWindow)}
 		l.entries[key] = e
 	}
+	if e.count >= loginRateLimitMax {
+		return false
+	}
 	e.count++
+	return true
 }
 
 // reset clears key's counter, called after a successful login.

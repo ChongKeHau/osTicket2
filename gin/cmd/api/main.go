@@ -90,9 +90,10 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	fileH := attachment.NewHandler(attachment.NewService(pool, store, cfg.MaxUploadBytes, cfg.AllowedMIME), cfg.MaxUploadBytes)
 
 	engine := server.New(server.Options{
-		Pinger:      pool,
-		CORSOrigins: cfg.CORSOrigins,
-		RequireAuth: auth.RequireAuth(tokens, authSvc),
+		Pinger:         pool,
+		CORSOrigins:    cfg.CORSOrigins,
+		TrustedProxies: cfg.TrustedProxies,
+		RequireAuth:    auth.RequireAuth(tokens, authSvc),
 		Mount: func(public, private *gin.RouterGroup) {
 			authH.Mount(public, private)
 			deptH.Mount(private)

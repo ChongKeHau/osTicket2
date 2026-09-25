@@ -43,6 +43,7 @@ run `docker compose down -v` to drop the volume and start clean.
 | PORT | 8080 | |
 | STORAGE_DIR | ./storage | attachment files |
 | CORS_ORIGINS | none | comma-separated allowed origins |
+| TRUSTED_PROXIES | none | comma-separated IPs/CIDRs allowed to set X-Forwarded-For/X-Real-IP; empty trusts none, so `ClientIP()` (used by the login rate limiter) is always the socket address |
 | MAX_UPLOAD_BYTES | 10485760 | per file |
 | ALLOWED_MIME | images, pdf, text, csv, zip, office | comma-separated |
 

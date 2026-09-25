@@ -120,7 +120,8 @@ func TestUploadRules(t *testing.T) {
 
 // TestUploadFilenameTruncationOnRuneBoundary proves a filename over 255
 // bytes made of multi-byte runes is truncated to a valid UTF-8 string of at
-// most 255 bytes, not split mid-rune.
+// most 255 bytes, not split mid-rune, and that truncation keeps the tail
+// (the extension), not the head.
 func TestUploadFilenameTruncationOnRuneBoundary(t *testing.T) {
 	f := newFixture(t)
 	long := strings.Repeat("é", 300) + ".txt" // 'é' is 2 bytes in UTF-8: 600+ bytes total
@@ -133,6 +134,9 @@ func TestUploadFilenameTruncationOnRuneBoundary(t *testing.T) {
 	}
 	if !utf8.ValidString(fl.Name) {
 		t.Fatalf("truncated name must still be valid UTF-8: %q", fl.Name)
+	}
+	if !strings.HasSuffix(fl.Name, ".txt") {
+		t.Fatalf("truncation must keep the tail (extension), got %q", fl.Name)
 	}
 }
 

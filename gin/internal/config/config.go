@@ -16,6 +16,11 @@ type Config struct {
 	CORSOrigins    []string
 	MaxUploadBytes int64
 	AllowedMIME    []string
+	// TrustedProxies are the IPs/CIDRs allowed to set X-Forwarded-For /
+	// X-Real-IP and have gin.Context.ClientIP() honor them. Empty (the
+	// default) trusts no proxy, so ClientIP() is always the socket address
+	// - see server.New, which passes this to (*gin.Engine).SetTrustedProxies.
+	TrustedProxies []string
 }
 
 var defaultMIME = []string{
@@ -66,6 +71,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if v := getenv("ALLOWED_MIME"); v != "" {
 		cfg.AllowedMIME = splitList(v)
+	}
+	if v := getenv("TRUSTED_PROXIES"); v != "" {
+		cfg.TrustedProxies = splitList(v)
 	}
 	return cfg, errors.Join(errs...)
 }

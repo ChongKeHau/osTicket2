@@ -143,6 +143,26 @@ func TestPrivateGroupFailsClosedWithoutRequireAuth(t *testing.T) {
 	}
 }
 
+// TestTrustedProxiesDefaultTrustsNone proves that with no TrustedProxies
+// configured, gin.Context.ClientIP() ignores a client-supplied
+// X-Forwarded-For and returns the socket address instead. This is the
+// property the login rate limiter (and anything else keyed by client IP)
+// depends on to not be trivially bypassable.
+func TestTrustedProxiesDefaultTrustsNone(t *testing.T) {
+	var gotIP string
+	r := New(Options{Pinger: pinger{}, Mount: func(public, private *gin.RouterGroup) {
+		public.GET("/ip", func(c *gin.Context) { gotIP = c.ClientIP() })
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ip", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.1")
+	req.RemoteAddr = "192.0.2.9:1234"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if gotIP != "192.0.2.9" {
+		t.Fatalf("ClientIP must ignore a forged X-Forwarded-For with no trusted proxies configured, got %q", gotIP)
+	}
+}
+
 func TestCORSAndAuthGroup(t *testing.T) {
 	called := false
 	r := New(Options{
