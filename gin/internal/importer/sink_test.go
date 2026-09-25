@@ -127,8 +127,20 @@ func TestResetSequences(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := tx.Exec(ctx, `INSERT INTO ticket (id, number, subject, status_id, dept_id, priority_id, requester_email)
+		OVERRIDING SYSTEM VALUE VALUES (900, '000777', 's', (SELECT id FROM ticket_status LIMIT 1), (SELECT id FROM department LIMIT 1), (SELECT id FROM ticket_priority LIMIT 1), 'r@example.test')`); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.ResetSequences(ctx); err != nil {
 		t.Fatal(err)
+	}
+	// The ticket-number sequence follows the highest numeric ticket number.
+	var next int64
+	if err := tx.QueryRow(ctx, "SELECT nextval('ticket_number_seq')").Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if next != 778 {
+		t.Fatalf("next ticket number = %d, want 778", next)
 	}
 	var id int64
 	if err := tx.QueryRow(ctx, "INSERT INTO department (name) VALUES ('Next') RETURNING id").Scan(&id); err != nil {

@@ -170,5 +170,11 @@ func (s *Sink) ResetSequences(ctx context.Context) error {
 			return fmt.Errorf("reset sequence %s: %w", t, err)
 		}
 	}
+	// The API numbers new tickets from ticket_number_seq, so move it past the
+	// highest numeric imported number. Suffixed numbers ("100001-5") are skipped.
+	if _, err := s.db.Exec(ctx, `SELECT setval('ticket_number_seq', COALESCE(MAX(number::bigint), 1), MAX(number) IS NOT NULL)
+		FROM ticket WHERE number ~ '^[0-9]{1,18}$'`); err != nil {
+		return fmt.Errorf("reset sequence ticket_number_seq: %w", err)
+	}
 	return nil
 }

@@ -78,6 +78,17 @@ func TestRunEndToEnd(t *testing.T) {
 	if id <= 5 {
 		t.Fatalf("new ticket id = %d, want above the imported ids", id)
 	}
+	// The ticket-number sequence was moved past the highest numeric imported
+	// number, so the API's next number cannot collide with an imported one.
+	// Imported numbers are 100001, 100002, 000003 and 100001-5 (not numeric);
+	// 100004 belongs to a ticket in a deleted status and is not imported.
+	next, err := q.NextTicketNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != 100003 {
+		t.Fatalf("next ticket number = %d, want 100003", next)
+	}
 	if !rep.NeedsAttention() {
 		t.Fatal("two attachments were skipped, so the run needs attention")
 	}
