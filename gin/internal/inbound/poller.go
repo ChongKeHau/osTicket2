@@ -38,7 +38,11 @@ func (p *Poller) RunOnce(ctx context.Context) (int, error) {
 		}
 		n++
 		if out.Outcome != "" {
-			p.log.Info("inbound mail", "outcome", out.Outcome, "ticket_id", out.TicketID, "reason", out.Reason)
+			var ticketID int64
+			if out.TicketID != nil {
+				ticketID = *out.TicketID
+			}
+			p.log.Info("inbound mail", "outcome", out.Outcome, "ticket_id", ticketID, "reason", out.Reason)
 		}
 		return true, nil
 	})

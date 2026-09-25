@@ -3,8 +3,10 @@ package inbound
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 
 	"github.com/emersion/go-imap/v2"
@@ -22,9 +24,20 @@ type IMAPOptions struct {
 }
 
 // IMAP is a Source over one mailbox folder; each Cycle opens and closes a connection.
-type IMAP struct{ o IMAPOptions }
+type IMAP struct {
+	o   IMAPOptions
+	log *slog.Logger
+}
 
-func NewIMAP(o IMAPOptions) *IMAP { return &IMAP{o: o} }
+func NewIMAP(o IMAPOptions) *IMAP { return &IMAP{o: o, log: slog.Default()} }
+
+// fetchDataErr marks a per-UID error reading one message's literal (as
+// opposed to a failure of the FETCH command itself). Cycle logs it and skips
+// just that UID for this cycle rather than ending the cycle.
+type fetchDataErr struct{ err error }
+
+func (e *fetchDataErr) Error() string { return e.err.Error() }
+func (e *fetchDataErr) Unwrap() error { return e.err }
 
 func (c *IMAP) connect() (*imapclient.Client, error) {
 	addr := net.JoinHostPort(c.o.Host, fmt.Sprint(c.o.Port))
@@ -63,6 +76,11 @@ func (c *IMAP) Cycle(ctx context.Context, max int, handle func(raw []byte) (bool
 		}
 		raw, err := fetchRaw(cl, uid)
 		if err != nil {
+			var derr *fetchDataErr
+			if errors.As(err, &derr) {
+				c.log.Warn("imap fetch data error", "uid", uint32(uid), "err", derr.err)
+				continue
+			}
 			return fmt.Errorf("imap fetch uid %d: %w", uid, err)
 		}
 		mark, err := handle(raw)
@@ -79,24 +97,39 @@ func (c *IMAP) Cycle(ctx context.Context, max int, handle func(raw []byte) (bool
 	return nil
 }
 
-// fetchRaw downloads the full message without setting \Seen (BODY.PEEK[]).
+// fetchRaw downloads the full message without setting \Seen (BODY.PEEK[]). A
+// missing or NIL body section (the message was expunged between SEARCH and
+// FETCH, or the server answered BODY[] NIL) is not an error: it yields empty
+// raw bytes, which the processor records as unparseable and the poller marks
+// seen like any other handled message. A read error on the literal is
+// returned as a *fetchDataErr so the caller can skip just that UID; only a
+// failure of the FETCH command itself (a transport-level problem) is
+// returned as a plain error.
 func fetchRaw(cl *imapclient.Client, uid imap.UID) ([]byte, error) {
 	cmd := cl.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
-	defer cmd.Close()
 	var raw []byte
+	var dataErr error
 	for msg := cmd.Next(); msg != nil; msg = cmd.Next() {
 		for item := msg.Next(); item != nil; item = msg.Next() {
-			if section, ok := item.(imapclient.FetchItemDataBodySection); ok {
-				b, err := io.ReadAll(section.Literal)
-				if err != nil {
-					return nil, err
-				}
-				raw = b
+			section, ok := item.(imapclient.FetchItemDataBodySection)
+			if !ok || section.Literal == nil {
+				continue
 			}
+			b, err := io.ReadAll(section.Literal)
+			if err != nil {
+				if dataErr == nil {
+					dataErr = err
+				}
+				continue
+			}
+			raw = b
 		}
 	}
-	if raw == nil {
-		return nil, fmt.Errorf("no body returned")
+	if err := cmd.Close(); err != nil {
+		return nil, err
+	}
+	if dataErr != nil {
+		return nil, &fetchDataErr{err: dataErr}
 	}
 	return raw, nil
 }

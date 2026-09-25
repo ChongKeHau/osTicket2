@@ -54,6 +54,23 @@ func TestPollerProcessesUnseenAndMarks(t *testing.T) {
 	}
 }
 
+// TestPollerMarksSeenOnEmptyMessage covers what the IMAP adapter hands the
+// poller for a missing or NIL body section: empty raw bytes rather than an
+// error. Process records that as unparseable (nil error), so the poller must
+// still mark it seen instead of retrying it forever.
+func TestPollerMarksSeenOnEmptyMessage(t *testing.T) {
+	f := newProcFixture(t)
+	src := &fakeSource{msgs: [][]byte{{}}, seen: []bool{false}}
+	p := NewPoller(src, f.proc)
+	n, err := p.RunOnce(f.ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("run = %d %v", n, err)
+	}
+	if !src.seen[0] {
+		t.Fatal("empty message must be marked seen")
+	}
+}
+
 func TestPollerLeavesMessageUnseenOnTransientError(t *testing.T) {
 	f := newProcFixture(t)
 	// Close the transaction so every database call fails.
