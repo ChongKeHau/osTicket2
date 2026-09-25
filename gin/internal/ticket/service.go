@@ -77,12 +77,14 @@ func NewService(b db.Beginner, opts ...Option) Service {
 func notFound(id int64) error { return fmt.Errorf("ticket %d: %w", id, apperr.ErrNotFound) }
 
 // ticketVars fills the ticket-derived template variables; the notifier adds site and link.
-func ticketVars(row db.GetTicketRow, agent, body, format string) mail.Vars {
+// format is the resolved (stored) body format, so the mail renders the body
+// exactly as the thread entry does.
+func ticketVars(row db.GetTicketRow, agent, body string, format db.BodyFormat) mail.Vars {
 	v := mail.Vars{Number: row.Number, Subject: row.Subject, RequesterName: row.RequesterName, RequesterEmail: row.RequesterEmail, AgentName: agent}
 	if v.RequesterName == "" {
 		v.RequesterName = row.RequesterEmail
 	}
-	v.Message, v.MessageHTML = mail.BodyVars(body, format)
+	v.Message, v.MessageHTML = mail.BodyVars(body, string(format))
 	return v
 }
 
@@ -184,8 +186,9 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 		if poster == "" {
 			poster = in.RequesterEmail
 		}
+		format := bodyFormat(in.MessageFormat)
 		entry, err := q.CreateThreadEntry(ctx, db.CreateThreadEntryParams{
-			TicketID: id, Type: db.ThreadEntryTypeMessage, Poster: poster, Body: in.Message, Format: bodyFormat(in.MessageFormat),
+			TicketID: id, Type: db.ThreadEntryTypeMessage, Poster: poster, Body: in.Message, Format: format,
 		})
 		if err != nil {
 			return err
@@ -209,7 +212,7 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 			if err := s.notifier.Enqueue(ctx, q, mail.Notification{
 				TemplateKey: "ticket_autoresp", TicketID: id, EntryID: &eid, AutoSubmitted: true,
 				To:   []mail.Recipient{{Name: in.RequesterName, Address: in.RequesterEmail}},
-				Vars: ticketVars(row, "", in.Message, in.MessageFormat),
+				Vars: ticketVars(row, "", in.Message, format),
 			}); err != nil {
 				return err
 			}

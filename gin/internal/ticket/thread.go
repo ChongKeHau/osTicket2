@@ -104,9 +104,10 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 		if err != nil {
 			return err
 		}
+		format := bodyFormat(in.Format)
 		entry, err := q.CreateThreadEntry(ctx, db.CreateThreadEntryParams{
 			TicketID: id, Type: db.ThreadEntryTypeResponse, StaffID: &p.StaffID,
-			Poster: fullName(&st.FirstName, &st.LastName), Body: in.Body, Format: bodyFormat(in.Format),
+			Poster: fullName(&st.FirstName, &st.LastName), Body: in.Body, Format: format,
 		})
 		if err != nil {
 			return err
@@ -125,7 +126,7 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
 			TemplateKey: "ticket_reply", TicketID: id, EntryID: &eid,
 			To:   []mail.Recipient{{Name: fresh.RequesterName, Address: fresh.RequesterEmail}},
-			Vars: ticketVars(fresh, fullName(&st.FirstName, &st.LastName), in.Body, in.Format),
+			Vars: ticketVars(fresh, fullName(&st.FirstName, &st.LastName), in.Body, format),
 		}); err != nil {
 			return err
 		}
@@ -275,7 +276,7 @@ func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffI
 		return s.notifier.Enqueue(ctx, q, mail.Notification{
 			TemplateKey: "assigned_alert", TicketID: id,
 			To:   []mail.Recipient{{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email}},
-			Vars: ticketVars(row, fullName(&st.FirstName, &st.LastName), "", "text"),
+			Vars: ticketVars(row, fullName(&st.FirstName, &st.LastName), "", db.BodyFormatText),
 		})
 	})
 }
@@ -353,8 +354,9 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		if err != nil {
 			return err
 		}
+		format := bodyFormat(in.Format)
 		entry, err := q.CreateThreadEntry(ctx, db.CreateThreadEntryParams{
-			TicketID: ticketID, Type: db.ThreadEntryTypeMessage, Poster: in.Poster, Body: in.Body, Format: bodyFormat(in.Format),
+			TicketID: ticketID, Type: db.ThreadEntryTypeMessage, Poster: in.Poster, Body: in.Body, Format: format,
 		})
 		if err != nil {
 			return err
@@ -391,7 +393,7 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		eid := entry.ID
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
 			TemplateKey: "message_alert", TicketID: ticketID, EntryID: &eid, To: to,
-			Vars: ticketVars(row, "", in.Body, in.Format),
+			Vars: ticketVars(row, "", in.Body, format),
 		}); err != nil {
 			return err
 		}

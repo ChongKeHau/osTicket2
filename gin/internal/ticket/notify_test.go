@@ -3,6 +3,7 @@ package ticket
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +60,30 @@ func TestCreateEnqueuesAutoresponse(t *testing.T) {
 	}
 	if _, ok := data["via"]; ok {
 		t.Fatalf("staff create must not set via: %+v", data)
+	}
+}
+
+// TestOmittedFormatMailsAsHTML: an omitted format is stored as html, so the
+// mail must render it as HTML too rather than escaping the markup.
+func TestOmittedFormatMailsAsHTML(t *testing.T) {
+	f := mailFixture(t)
+	tk, err := f.svc.Create(f.ctx, f.admin, CreateInput{Subject: "Printer", Message: "<p>Smoke <b>here</b></p>", RequesterEmail: "pat@example.test", DeptID: &f.support.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := outbox(t, f)
+	if len(rows) != 1 || !strings.Contains(rows[0].BodyHtml, "<b>here</b>") || strings.Contains(rows[0].BodyHtml, "&lt;p&gt;") {
+		t.Fatalf("autoresp html = %+v", rows)
+	}
+	if _, err := f.svc.Reply(f.ctx, f.agent, tk.ID, ReplyInput{Body: "<p>On <i>it</i></p>"}); err != nil {
+		t.Fatal(err)
+	}
+	rows = outbox(t, f)
+	if len(rows) != 1 || !strings.Contains(rows[0].BodyHtml, "<p>On <i>it</i></p>") || strings.Contains(rows[0].BodyHtml, "&lt;p&gt;") {
+		t.Fatalf("reply html = %+v", rows)
+	}
+	if strings.Contains(rows[0].BodyText, "<p>") {
+		t.Fatalf("reply text part keeps markup: %q", rows[0].BodyText)
 	}
 }
 
