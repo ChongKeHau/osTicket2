@@ -203,6 +203,21 @@ func TestProcessAttachmentsAndHTML(t *testing.T) {
 	}
 }
 
+// TestProcessStoresUndeclaredCharsetAndNUL runs a latin-1 body with no charset
+// parameter and a NUL byte through real Postgres, which rejects both raw.
+func TestProcessStoresUndeclaredCharsetAndNUL(t *testing.T) {
+	f := newProcFixture(t)
+	raw := "From: =?utf-8?q?P=E9t?= <nul@example.test>\r\nTo: desk@example.test\r\nSubject: Caf\xe9\x00 down\r\nMessage-ID: <nul-1@example.test>\r\nContent-Type: text/plain\r\n\r\ncaf\xe9\x00 machine\r\n"
+	out, err := f.proc.Process(f.ctx, []byte(raw))
+	if err != nil || out.Outcome != db.InboundOutcomeCreated || out.TicketID == nil {
+		t.Fatalf("out = %+v, %v", out, err)
+	}
+	tk, err := f.q.GetTicket(f.ctx, *out.TicketID)
+	if err != nil || tk.Subject != "Caf� down" {
+		t.Fatalf("ticket = %+v, %v", tk, err)
+	}
+}
+
 func TestProcessUnparseableIsRecorded(t *testing.T) {
 	f := newProcFixture(t)
 	out, err := f.proc.Process(f.ctx, []byte("garbage without headers"))

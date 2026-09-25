@@ -1,10 +1,12 @@
 package inbound
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -91,5 +93,57 @@ func TestParseHeadersAndMissingID(t *testing.T) {
 	}
 	if _, err := Parse([]byte("garbage"), 1<<20); err == nil {
 		t.Fatal("garbage must error")
+	}
+}
+
+// TestParseCleansStringsForPostgres covers bytes Postgres rejects in text
+// columns: NUL and invalid UTF-8 (a part with no charset parameter is not
+// converted by go-message, so latin-1 bytes arrive raw).
+func TestParseCleansStringsForPostgres(t *testing.T) {
+	raw := "From: =?utf-8?q?P=E9t=00_R?= <pat@example.test>\r\n" +
+		"To: desk@example.test\r\n" +
+		"Subject: Caf\xe9\x00 broken\r\n" +
+		"Message-ID: <bad\xe9\x00-1@example.test>\r\n" +
+		"In-Reply-To: <irt\xe9\x00@example.test>\r\n" +
+		"References: <ref\xe9\x00@example.test>\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n" +
+		"--b1\r\nContent-Type: multipart/alternative; boundary=\"b2\"\r\n\r\n" +
+		"--b2\r\nContent-Type: text/plain\r\n\r\nna\xefve\x00 body\r\n" +
+		"--b2\r\nContent-Type: text/html\r\n\r\n<p>h\xe9\x00llo</p>\r\n" +
+		"--b2--\r\n" +
+		"--b1\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"r\xe9\x00sum.pdf\"\r\n\r\n%PDF\r\n" +
+		"--b1--\r\n"
+	p, err := Parse([]byte(raw), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	strs := map[string]string{
+		"subject": p.Subject, "from name": p.FromName, "from address": p.FromAddress,
+		"message-id": p.MessageID, "text": p.Text, "html": p.HTML,
+	}
+	for i, s := range p.InReplyTo {
+		strs[fmt.Sprintf("in-reply-to %d", i)] = s
+	}
+	for i, s := range p.References {
+		strs[fmt.Sprintf("references %d", i)] = s
+	}
+	for i, a := range p.Attachments {
+		strs[fmt.Sprintf("attachment %d name", i)] = a.Filename
+		strs[fmt.Sprintf("attachment %d mime", i)] = a.MIME
+	}
+	for k, s := range strs {
+		if strings.ContainsRune(s, 0) || !utf8.ValidString(s) {
+			t.Errorf("%s not Postgres-safe: %q", k, s)
+		}
+	}
+	if !strings.Contains(p.Text, "na�ve body") || !strings.Contains(p.Subject, "Caf� broken") || !strings.Contains(p.HTML, "h�llo") {
+		t.Fatalf("text/subject/html = %q / %q / %q", p.Text, p.Subject, p.HTML)
+	}
+	// go-message's msg-id parser rejects the 8-bit ids above (the id falls
+	// back to the sha256 form and the reference lists come out empty); the
+	// loop above still guards them should that parser ever let bytes through.
+	if len(p.Attachments) != 1 {
+		t.Fatalf("parsed = %+v", p)
 	}
 }

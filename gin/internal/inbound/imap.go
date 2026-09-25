@@ -49,7 +49,7 @@ func (c *IMAP) connect() (*imapclient.Client, error) {
 }
 
 // Cycle fetches unseen messages one by one and marks the handled ones seen.
-func (c *IMAP) Cycle(ctx context.Context, max int, handle func(raw []byte) (bool, error)) error {
+func (c *IMAP) Cycle(ctx context.Context, max int, handle func(uid uint32, raw []byte) (bool, error)) error {
 	cl, err := c.connect()
 	if err != nil {
 		return fmt.Errorf("imap dial %s: %w", c.o.Host, err)
@@ -83,7 +83,7 @@ func (c *IMAP) Cycle(ctx context.Context, max int, handle func(raw []byte) (bool
 			}
 			return fmt.Errorf("imap fetch uid %d: %w", uid, err)
 		}
-		mark, err := handle(raw)
+		mark, err := handle(uint32(uid), raw)
 		if err != nil {
 			return err
 		}

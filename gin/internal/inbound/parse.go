@@ -120,7 +120,35 @@ func Parse(raw []byte, maxAttachment int64) (*Parsed, error) {
 			p.Attachments = append(p.Attachments, a)
 		}
 	}
+	p.clean()
 	return p, nil
+}
+
+// dbSafe makes s storable in a Postgres text column, which rejects NUL bytes
+// and invalid UTF-8: NULs are dropped and each invalid sequence becomes
+// U+FFFD (the same rule as the importer). go-message converts a part only
+// when it declares a known charset, so undeclared or mislabelled 8-bit text
+// reaches us raw.
+func dbSafe(s string) string {
+	return strings.ToValidUTF8(strings.ReplaceAll(s, "\x00", ""), "�")
+}
+
+// clean applies dbSafe to every string of the parsed message.
+func (p *Parsed) clean() {
+	for _, s := range []*string{&p.MessageID, &p.FromAddress, &p.FromName, &p.Subject,
+		&p.AutoSubmitted, &p.Precedence, &p.AutoResponseSuppress, &p.ContentType, &p.Text, &p.HTML} {
+		*s = dbSafe(*s)
+	}
+	for i := range p.InReplyTo {
+		p.InReplyTo[i] = dbSafe(p.InReplyTo[i])
+	}
+	for i := range p.References {
+		p.References[i] = dbSafe(p.References[i])
+	}
+	for i := range p.Attachments {
+		p.Attachments[i].Filename = dbSafe(p.Attachments[i].Filename)
+		p.Attachments[i].MIME = dbSafe(p.Attachments[i].MIME)
+	}
 }
 
 // angled ensures each id carries angle brackets, as our outbox stores them.
