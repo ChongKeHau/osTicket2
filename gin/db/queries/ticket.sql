@@ -96,3 +96,6 @@ RETURNING *;
 
 -- name: CreateTicketEvent :exec
 INSERT INTO ticket_event (ticket_id, staff_id, kind, data) VALUES ($1, $2, $3, $4);
+
+-- name: GetTicketByNumber :one
+SELECT id FROM ticket WHERE number = $1;

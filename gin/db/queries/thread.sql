@@ -37,3 +37,6 @@ UPDATE ticket SET dept_id = $2, updated_at = now() WHERE id = $1;
 
 -- name: MarkTicketAnswered :exec
 UPDATE ticket SET is_answered = true, last_response_at = now(), updated_at = now() WHERE id = $1;
+
+-- name: MarkTicketUnanswered :exec
+UPDATE ticket SET is_answered = false, last_message_at = clock_timestamp(), updated_at = now() WHERE id = $1;

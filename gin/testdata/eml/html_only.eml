@@ -1,0 +1,8 @@
+From: "Pat" <pat@example.test>
+To: desk@example.test
+Subject: =?utf-8?q?Caf=C3=A9_machine?=
+Date: Thu, 25 Sep 2026 10:01:00 +0000
+Message-ID: <html-1@example.test>
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Hello <b>desk</b></p><script>alert(1)</script></body></html>

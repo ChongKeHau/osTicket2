@@ -242,6 +242,17 @@ func (q *Queries) GetTicket(ctx context.Context, id int64) (GetTicketRow, error)
 	return i, err
 }
 
+const getTicketByNumber = `-- name: GetTicketByNumber :one
+SELECT id FROM ticket WHERE number = $1
+`
+
+func (q *Queries) GetTicketByNumber(ctx context.Context, number string) (int64, error) {
+	row := q.db.QueryRow(ctx, getTicketByNumber, number)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listTickets = `-- name: ListTickets :many
 SELECT t.id, t.number, t.subject,
        t.status_id, s.name AS status_name, s.state AS status_state,

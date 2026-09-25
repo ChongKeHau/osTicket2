@@ -52,6 +52,92 @@ func (ns NullBodyFormat) Value() (driver.Value, error) {
 	return string(ns.BodyFormat), nil
 }
 
+type EmailStatus string
+
+const (
+	EmailStatusPending EmailStatus = "pending"
+	EmailStatusSent    EmailStatus = "sent"
+	EmailStatusFailed  EmailStatus = "failed"
+)
+
+func (e *EmailStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EmailStatus(s)
+	case string:
+		*e = EmailStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EmailStatus: %T", src)
+	}
+	return nil
+}
+
+type NullEmailStatus struct {
+	EmailStatus EmailStatus
+	Valid       bool // Valid is true if EmailStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEmailStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.EmailStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EmailStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEmailStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EmailStatus), nil
+}
+
+type InboundOutcome string
+
+const (
+	InboundOutcomeCreated InboundOutcome = "created"
+	InboundOutcomeReplied InboundOutcome = "replied"
+	InboundOutcomeIgnored InboundOutcome = "ignored"
+)
+
+func (e *InboundOutcome) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = InboundOutcome(s)
+	case string:
+		*e = InboundOutcome(s)
+	default:
+		return fmt.Errorf("unsupported scan type for InboundOutcome: %T", src)
+	}
+	return nil
+}
+
+type NullInboundOutcome struct {
+	InboundOutcome InboundOutcome
+	Valid          bool // Valid is true if InboundOutcome is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullInboundOutcome) Scan(value interface{}) error {
+	if value == nil {
+		ns.InboundOutcome, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.InboundOutcome.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullInboundOutcome) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.InboundOutcome), nil
+}
+
 type ThreadEntryType string
 
 const (
@@ -150,6 +236,7 @@ const (
 	TicketSourceApi   TicketSource = "api"
 	TicketSourcePhone TicketSource = "phone"
 	TicketSourceOther TicketSource = "other"
+	TicketSourceEmail TicketSource = "email"
 )
 
 func (e *TicketSource) Scan(src interface{}) error {
@@ -247,6 +334,38 @@ type Department struct {
 	UpdatedAt time.Time
 }
 
+type EmailOutbox struct {
+	ID            int64
+	TicketID      int64
+	EntryID       *int64
+	TemplateKey   string
+	ToAddress     string
+	ToName        string
+	Subject       string
+	BodyHtml      string
+	BodyText      string
+	MessageID     string
+	InReplyTo     *string
+	AutoSubmitted bool
+	Status        EmailStatus
+	Attempts      int32
+	LastError     *string
+	NextAttemptAt time.Time
+	SentAt        *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type EmailTemplate struct {
+	ID        int64
+	Key       string
+	Subject   string
+	BodyHtml  string
+	BodyText  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type File struct {
 	ID         int64
 	Key        string
@@ -269,6 +388,19 @@ type HelpTopic struct {
 	SortOrder  int32
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+type InboundMessage struct {
+	ID          int64
+	MessageID   string
+	FromAddress string
+	FromName    string
+	Subject     string
+	TicketID    *int64
+	EntryID     *int64
+	Outcome     InboundOutcome
+	Reason      string
+	ReceivedAt  time.Time
 }
 
 type RefreshToken struct {

@@ -134,6 +134,45 @@ func (q *Queries) GetStaffByUsername(ctx context.Context, username string) (Staf
 	return i, err
 }
 
+const listActiveStaffForDept = `-- name: ListActiveStaffForDept :many
+SELECT DISTINCT s.id, s.username, s.email, s.password_hash, s.first_name, s.last_name, s.is_admin, s.is_active, s.primary_dept_id, s.created_at, s.updated_at FROM staff s
+LEFT JOIN staff_department sd ON sd.staff_id = s.id
+WHERE s.is_active AND (s.primary_dept_id = $1 OR sd.dept_id = $1)
+ORDER BY s.id
+`
+
+func (q *Queries) ListActiveStaffForDept(ctx context.Context, primaryDeptID int64) ([]Staff, error) {
+	rows, err := q.db.Query(ctx, listActiveStaffForDept, primaryDeptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Staff{}
+	for rows.Next() {
+		var i Staff
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.FirstName,
+			&i.LastName,
+			&i.IsAdmin,
+			&i.IsActive,
+			&i.PrimaryDeptID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaff = `-- name: ListStaff :many
 SELECT id, username, email, password_hash, first_name, last_name, is_admin, is_active, primary_dept_id, created_at, updated_at FROM staff ORDER BY username
 `

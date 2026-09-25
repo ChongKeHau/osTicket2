@@ -13,6 +13,7 @@ import (
 	"github.com/grandpine/ticket-api/internal/auth"
 	"github.com/grandpine/ticket-api/internal/db"
 	"github.com/grandpine/ticket-api/internal/httpx"
+	"github.com/grandpine/ticket-api/internal/mail"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -31,15 +32,78 @@ type Service interface {
 	Assign(ctx context.Context, p auth.Principal, id int64, staffID *int64) (*Ticket, error)
 	Transfer(ctx context.Context, p auth.Principal, id int64, deptID int64) (*Ticket, error)
 	Events(ctx context.Context, p auth.Principal, id int64) ([]Event, error)
+
+	CreateExternal(ctx context.Context, in ExternalCreateInput) (*Ticket, error)
+	AppendMessage(ctx context.Context, ticketID int64, in MessageInput) (*Entry, error)
 }
 
-type service struct{ db db.Beginner }
+// SystemPrincipal acts for changes that no staff member made (inbound mail).
+var SystemPrincipal = auth.Principal{IsAdmin: true}
 
-func NewService(b db.Beginner) Service { return &service{db: b} }
+// ExternalCreateInput opens a ticket on behalf of an outside requester (inbound mail).
+type ExternalCreateInput struct {
+	Subject, Body, Format         string
+	RequesterName, RequesterEmail string
+	DeptID                        int64
+	FileIDs                       []int64
+	AutoSubmitted                 bool
+}
+
+// MessageInput appends a requester message (inbound mail) to a ticket.
+type MessageInput struct {
+	Poster, Body, Format string
+	FileIDs              []int64
+}
+
+type service struct {
+	db       db.Beginner
+	notifier mail.Notifier
+}
+
+// Option configures NewService.
+type Option func(*service)
+
+// WithNotifier makes the service queue email notifications.
+func WithNotifier(n mail.Notifier) Option { return func(s *service) { s.notifier = n } }
+
+func NewService(b db.Beginner, opts ...Option) Service {
+	s := &service{db: b, notifier: mail.Disabled{}}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
 
 func notFound(id int64) error { return fmt.Errorf("ticket %d: %w", id, apperr.ErrNotFound) }
 
+// ticketVars fills the ticket-derived template variables; the notifier adds site and link.
+// format is the resolved (stored) body format, so the mail renders the body
+// exactly as the thread entry does.
+func ticketVars(row db.GetTicketRow, agent, body string, format db.BodyFormat) mail.Vars {
+	v := mail.Vars{Number: row.Number, Subject: row.Subject, RequesterName: row.RequesterName, RequesterEmail: row.RequesterEmail, AgentName: agent}
+	if v.RequesterName == "" {
+		v.RequesterName = row.RequesterEmail
+	}
+	v.Message, v.MessageHTML = mail.BodyVars(body, string(format))
+	return v
+}
+
 func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) (*Ticket, error) {
+	return s.create(ctx, p, in, &p.StaffID, "")
+}
+
+func (s *service) CreateExternal(ctx context.Context, in ExternalCreateInput) (*Ticket, error) {
+	dept := in.DeptID
+	return s.create(ctx, SystemPrincipal, CreateInput{
+		Subject: in.Subject, Message: in.Body, MessageFormat: in.Format,
+		RequesterName: in.RequesterName, RequesterEmail: in.RequesterEmail,
+		DeptID: &dept, Source: "email", FileIDs: in.FileIDs, AutoSubmitted: in.AutoSubmitted,
+	}, nil, "email")
+}
+
+// via records how the ticket was created (e.g. "email" for inbound mail) on
+// the created event's data; empty means the normal staff/API path.
+func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, actor *int64, via string) (*Ticket, error) {
 	if err := validateExtra(in.Extra); err != nil {
 		return nil, err
 	}
@@ -122,8 +186,9 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 		if poster == "" {
 			poster = in.RequesterEmail
 		}
+		format := bodyFormat(in.MessageFormat)
 		entry, err := q.CreateThreadEntry(ctx, db.CreateThreadEntryParams{
-			TicketID: id, Type: db.ThreadEntryTypeMessage, Poster: poster, Body: in.Message, Format: bodyFormat(in.MessageFormat),
+			TicketID: id, Type: db.ThreadEntryTypeMessage, Poster: poster, Body: in.Message, Format: format,
 		})
 		if err != nil {
 			return err
@@ -131,8 +196,26 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
-		if err := event(ctx, q, id, &p.StaffID, db.TicketEventKindCreated, map[string]any{"number": number}); err != nil {
+		data := map[string]any{"number": number}
+		if via != "" {
+			data["via"] = via
+		}
+		if err := event(ctx, q, id, actor, db.TicketEventKindCreated, data); err != nil {
 			return err
+		}
+		if in.RequesterEmail != "" && !in.AutoSubmitted {
+			row, err := q.GetTicket(ctx, id)
+			if err != nil {
+				return err
+			}
+			eid := entry.ID
+			if err := s.notifier.Enqueue(ctx, q, mail.Notification{
+				TemplateKey: "ticket_autoresp", TicketID: id, EntryID: &eid, AutoSubmitted: true,
+				To:   []mail.Recipient{{Name: in.RequesterName, Address: in.RequesterEmail}},
+				Vars: ticketVars(row, "", in.Message, format),
+			}); err != nil {
+				return err
+			}
 		}
 		out, err = get(ctx, q, p, id)
 		return err
