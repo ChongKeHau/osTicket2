@@ -89,11 +89,13 @@ values are needed; everything else defaults to Zoho's servers:
 
 | Variable | Default | Notes |
 |---|---|---|
-| SMTP_HOST / SMTP_PORT | smtppro.zoho.com / 465 | 465 uses implicit TLS, 587 STARTTLS (`SMTP_TLS` overrides) |
+| SMTP_HOST / SMTP_PORT | smtppro.zoho.com / 465 | |
+| SMTP_TLS | `implicit` on port 465, `starttls` on any other port | `implicit`, `starttls` or `none` |
 | SMTP_USER / SMTP_PASSWORD | MAIL_FROM address / ZOHO_APP_TOKEN | |
-| IMAP_HOST / IMAP_PORT | imappro.zoho.com / 993 | implicit TLS |
+| IMAP_HOST / IMAP_PORT | imappro.zoho.com / 993 | |
+| IMAP_TLS | implicit | `implicit` or `none` (no STARTTLS) |
 | IMAP_USER / IMAP_PASSWORD / IMAP_FOLDER | MAIL_FROM address / ZOHO_APP_TOKEN / INBOX | |
-| MAIL_POLL_INTERVAL / MAIL_SEND_INTERVAL | 60s / 5s | |
+| MAIL_POLL_INTERVAL / MAIL_SEND_INTERVAL | 60s / 5s | Go durations; at least 10s / at least 1s |
 | MAIL_SITE_NAME | Ticket Desk | used in templates |
 | MAIL_DEFAULT_DEPT_ID | the seed department | department for tickets opened by mail |
 
@@ -114,9 +116,10 @@ Commands: `api mail-test --to you@example.com` sends one test message through th
 SMTP settings. `api mail-worker` runs the sender and poller without the HTTP server, for
 deployments that want mail out of the web process (running it alongside `serve` is safe).
 
-Admin API: `GET/PATCH /api/v1/email/templates[/:key]` (Go `text/template` and `html/template`
-with `.SiteName .Number .Subject .RequesterName .RequesterEmail .AgentName .Link .Message
-.MessageHTML`), `GET /api/v1/email/outbox?status=`, `POST /api/v1/email/outbox/:id/retry`,
+Admin API (admin staff only): `GET /api/v1/email/templates`,
+`PATCH /api/v1/email/templates/:key` (Go `text/template` and `html/template` with `.SiteName
+.Number .Subject .RequesterName .RequesterEmail .AgentName .Link .Message .MessageHTML`),
+`GET /api/v1/email/outbox?status=`, `POST /api/v1/email/outbox/:id/retry`,
 `GET /api/v1/email/inbound`.
 
 ## Commands
