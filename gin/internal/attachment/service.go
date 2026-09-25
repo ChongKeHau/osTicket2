@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grandpine/ticket-api/internal/apperr"
 	"github.com/grandpine/ticket-api/internal/auth"
@@ -47,11 +48,18 @@ func NewService(b db.Beginner, store Storage, maxBytes int64, allowedMIME []stri
 
 func (s *service) Upload(ctx context.Context, p auth.Principal, name, mime string, r io.Reader) (*File, error) {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
-	if name == "" || name == "." || name == "/" {
+	if name == "" || name == "." || name == "/" || name == ".." {
 		return nil, apperr.Validation("file", "filename is required")
 	}
 	if len(name) > 255 {
-		name = name[len(name)-255:]
+		// Truncate to at most 255 bytes without splitting a multi-byte rune:
+		// trim back byte by byte (at most 3 times) until the tail is valid
+		// UTF-8 again.
+		truncated := name[:255]
+		for len(truncated) > 0 && !utf8.ValidString(truncated) {
+			truncated = truncated[:len(truncated)-1]
+		}
+		name = truncated
 	}
 	mime = strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
 	if !s.allowed[mime] {
@@ -120,6 +128,13 @@ func (s *service) GC(ctx context.Context, olderThan time.Duration) (int, error) 
 	n := 0
 	for _, row := range rows {
 		affected, err := q.DeleteUnattachedFile(ctx, row.ID)
+		// Belt and braces beside the query's own WHERE NOT EXISTS guard: a
+		// foreign key violation (a concurrent attach winning the race
+		// between the list and the delete) is treated the same as the
+		// guard returning 0 rows -- skipped, not aborting the whole run.
+		if db.IsForeignKeyViolation(err) {
+			continue
+		}
 		if err != nil {
 			return n, err
 		}

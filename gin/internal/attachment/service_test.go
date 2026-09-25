@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grandpine/ticket-api/internal/apperr"
 	"github.com/grandpine/ticket-api/internal/auth"
@@ -92,6 +93,9 @@ func TestUploadRules(t *testing.T) {
 	if _, err := f.svc.Upload(f.ctx, f.agent, "", "text/plain", strings.NewReader("x")); !errors.As(err, &ve) || ve.Fields["file"] == "" {
 		t.Fatalf("empty name: %v", err)
 	}
+	if _, err := f.svc.Upload(f.ctx, f.agent, "..", "text/plain", strings.NewReader("x")); !errors.As(err, &ve) || ve.Fields["file"] == "" {
+		t.Fatalf("'..' base name must be rejected: %v", err)
+	}
 	var n int
 	_ = f.tx.QueryRow(f.ctx, `SELECT count(*) FROM file`).Scan(&n)
 	if n != 1 {
@@ -111,6 +115,24 @@ func TestUploadRules(t *testing.T) {
 	}
 	if blobs != 1 {
 		t.Fatalf("rejected uploads must not leave blobs on disk: %d", blobs)
+	}
+}
+
+// TestUploadFilenameTruncationOnRuneBoundary proves a filename over 255
+// bytes made of multi-byte runes is truncated to a valid UTF-8 string of at
+// most 255 bytes, not split mid-rune.
+func TestUploadFilenameTruncationOnRuneBoundary(t *testing.T) {
+	f := newFixture(t)
+	long := strings.Repeat("é", 300) + ".txt" // 'é' is 2 bytes in UTF-8: 600+ bytes total
+	fl, err := f.svc.Upload(f.ctx, f.agent, long, "text/plain", strings.NewReader("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fl.Name) > 255 {
+		t.Fatalf("name must be truncated to at most 255 bytes, got %d: %q", len(fl.Name), fl.Name)
+	}
+	if !utf8.ValidString(fl.Name) {
+		t.Fatalf("truncated name must still be valid UTF-8: %q", fl.Name)
 	}
 }
 

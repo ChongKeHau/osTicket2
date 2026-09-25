@@ -158,6 +158,9 @@ func gcFiles(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, args []
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if *olderThan < time.Hour {
+		return errors.New("--older-than must be at least 1h")
+	}
 	store, err := attachment.NewLocalStorage(cfg.StorageDir)
 	if err != nil {
 		return err
