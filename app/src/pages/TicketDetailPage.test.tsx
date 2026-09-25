@@ -88,6 +88,24 @@ test('edit form discards changes on cancel and re-shows original values on reope
   expect(screen.getByLabelText(/subject/i)).toHaveValue(ticketFixture.subject)
 })
 
+test('edit form shows the due date in local time and omits it when unchanged', async () => {
+  let body: Record<string, unknown> | undefined
+  const ticketWithDue = { ...ticketFixture, due_at: '2026-09-26T10:00:00Z' }
+  server.use(http.get('/api/v1/tickets/7', () => HttpResponse.json(ticketWithDue)))
+  server.use(http.patch('/api/v1/tickets/7', async ({ request }) => { body = (await request.json()) as Record<string, unknown>; return HttpResponse.json(ticketWithDue) }))
+  renderWithProviders(<App />, { route: '/tickets/7' })
+  await screen.findByRole('heading', { name: /000007/ })
+  await userEvent.click(screen.getByRole('button', { name: /edit/i }))
+  // The suite runs in America/Los_Angeles (UTC-7 in September).
+  expect(screen.getByLabelText(/^due$/i)).toHaveValue('2026-09-26T03:00')
+  const subject = screen.getByLabelText(/subject/i)
+  await userEvent.clear(subject)
+  await userEvent.type(subject, 'Only the subject')
+  await userEvent.click(screen.getByRole('button', { name: /save/i }))
+  await waitFor(() => expect(body).toMatchObject({ subject: 'Only the subject' }))
+  expect(body).not.toHaveProperty('due_at')
+})
+
 test('edit form clears the due date to null on save', async () => {
   let body: unknown
   const ticketWithDue = { ...ticketFixture, due_at: '2026-09-26T10:00:00Z' }
