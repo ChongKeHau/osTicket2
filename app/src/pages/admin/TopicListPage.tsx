@@ -32,7 +32,7 @@ export function TopicListPage() {
             { header: 'Sort', cell: (t) => String(t.sort_order) },
           ]}
           rows={topics}
-          actions={(t) => <ConfirmDelete label={t.name} onConfirm={() => remove.mutateAsync(t.id)} />}
+          actions={(t) => <ConfirmDelete label={t.name} disabled={remove.isPending} onConfirm={() => remove.mutateAsync(t.id)} />}
           empty="No topics yet."
         />
       )}

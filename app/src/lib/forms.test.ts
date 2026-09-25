@@ -28,3 +28,8 @@ test('splitErrors routes known field errors to fields and everything else to the
   expect(splitErrors(conflict, known)).toEqual({ fields: {}, banner: conflict })
   expect(splitErrors(null, known)).toEqual({ fields: {}, banner: null })
 })
+
+test('splitErrors sends a known field with an empty message to the banner', () => {
+  const blank = new ApiError(400, 'validation_failed', 'request validation failed', { name: '' })
+  expect(splitErrors(blank, ['name'])).toEqual({ fields: {}, banner: blank })
+})

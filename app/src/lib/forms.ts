@@ -31,7 +31,8 @@ export function splitErrors(error: unknown, known: string[]): { fields: Record<s
   const fields: Record<string, string> = {}
   let unknown = false
   for (const [k, v] of Object.entries(error.fields)) {
-    if (known.includes(k)) fields[k] = v
+    // An empty message would render nothing under the field, so it goes to the banner.
+    if (known.includes(k) && v) fields[k] = v
     else unknown = true
   }
   return { fields, banner: unknown ? error : null }

@@ -34,7 +34,7 @@ export function DepartmentListPage() {
             { header: 'Manager', cell: (d) => manager(d.manager_id) },
           ]}
           rows={departments}
-          actions={(d) => <ConfirmDelete label={d.name} onConfirm={() => remove.mutateAsync(d.id)} />}
+          actions={(d) => <ConfirmDelete label={d.name} disabled={remove.isPending} onConfirm={() => remove.mutateAsync(d.id)} />}
           empty="No departments yet."
         />
       )}
