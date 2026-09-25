@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { getTicket } from '../api/tickets'
+import { Composer } from '../components/Composer'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { EventsPanel } from '../components/EventsPanel'
 import { LoadingScreen } from '../components/LoadingScreen'
@@ -25,7 +26,7 @@ export function TicketDetailPage() {
       <p><Link to="/tickets">← Tickets</Link></p>
       <TicketHeader ticket={q.data} />
       <div className="panel"><Thread ticketId={id} /></div>
-      <section aria-label="Composer" className="panel" />
+      <Composer ticketId={id} />
       <EventsPanel ticketId={id} />
     </div>
   )
