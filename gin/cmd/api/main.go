@@ -19,6 +19,7 @@ import (
 	"github.com/grandpine/ticket-api/internal/config"
 	"github.com/grandpine/ticket-api/internal/db"
 	"github.com/grandpine/ticket-api/internal/dept"
+	"github.com/grandpine/ticket-api/internal/mail"
 	"github.com/grandpine/ticket-api/internal/server"
 	"github.com/grandpine/ticket-api/internal/staff"
 	"github.com/grandpine/ticket-api/internal/ticket"
@@ -53,9 +54,9 @@ func run(args []string) error {
 		args = args[1:]
 	}
 	switch cmd {
-	case "serve", "create-admin", "gc-files", "import-osticket":
+	case "serve", "create-admin", "gc-files", "import-osticket", "mail-worker", "mail-test":
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files or import-osticket)", cmd)
+		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files, import-osticket, mail-worker or mail-test)", cmd)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -80,8 +81,12 @@ func run(args []string) error {
 		return createAdmin(ctx, pool, args)
 	case "gc-files":
 		return gcFiles(ctx, cfg, pool, args)
+	case "mail-worker":
+		return mailWorker(ctx, cfg, pool)
+	case "mail-test":
+		return mailTest(ctx, cfg, args)
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files or import-osticket)", cmd)
+		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files, import-osticket, mail-worker or mail-test)", cmd)
 	}
 }
 
@@ -96,7 +101,9 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	deptH := dept.NewHandler(dept.NewService(pool))
 	topicH := topic.NewHandler(topic.NewService(pool))
 	staffH := staff.NewHandler(staff.NewService(pool))
-	ticketH := ticket.NewHandler(ticket.NewService(pool))
+	notifier, renderer := buildMail(cfg)
+	ticketH := ticket.NewHandler(ticket.NewService(pool, ticket.WithNotifier(notifier)))
+	mailH := mail.NewHandler(pool, renderer)
 	fileH := attachment.NewHandler(attachment.NewService(pool, store, cfg.MaxUploadBytes, cfg.AllowedMIME), cfg.MaxUploadBytes)
 
 	engine := server.New(server.Options{
@@ -111,8 +118,10 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 			staffH.Mount(private)
 			ticketH.Mount(private)
 			fileH.Mount(private)
+			mailH.Mount(private)
 		},
 	})
+	waitMail := startMailLoops(ctx, cfg, pool, store, notifier)
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port), Handler: engine,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -139,6 +148,7 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	if err := <-done; err != nil {
 		return err
 	}
+	waitMail()
 	return nil
 }
 

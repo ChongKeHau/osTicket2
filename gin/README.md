@@ -77,6 +77,48 @@ run `docker compose down -v` to drop the volume and start clean.
 | MAX_UPLOAD_BYTES | 10485760 | per file |
 | ALLOWED_MIME | images, pdf, text, csv, zip, office | comma-separated |
 
+## Email
+
+Set `MAIL_ENABLED=true` to send notifications and read a mailbox. For Zoho Mail only four
+values are needed; everything else defaults to Zoho's servers:
+
+    MAIL_ENABLED=true
+    MAIL_FROM="Support <support@yourdomain.com>"
+    ZOHO_APP_TOKEN=<application-specific password created in Zoho for app "ticketing">
+    APP_BASE_URL=https://desk.yourdomain.com
+
+| Variable | Default | Notes |
+|---|---|---|
+| SMTP_HOST / SMTP_PORT | smtppro.zoho.com / 465 | 465 uses implicit TLS, 587 STARTTLS (`SMTP_TLS` overrides) |
+| SMTP_USER / SMTP_PASSWORD | MAIL_FROM address / ZOHO_APP_TOKEN | |
+| IMAP_HOST / IMAP_PORT | imappro.zoho.com / 993 | implicit TLS |
+| IMAP_USER / IMAP_PASSWORD / IMAP_FOLDER | MAIL_FROM address / ZOHO_APP_TOKEN / INBOX | |
+| MAIL_POLL_INTERVAL / MAIL_SEND_INTERVAL | 60s / 5s | |
+| MAIL_SITE_NAME | Ticket Desk | used in templates |
+| MAIL_DEFAULT_DEPT_ID | the seed department | department for tickets opened by mail |
+
+What is sent: an auto-response when a ticket is created with a requester email, the agent's
+reply to the requester, an alert to an agent when a ticket is assigned to them, and an alert to
+the assignee (or the whole department when unassigned) when a requester writes back by mail.
+Notes, transfers and status changes send nothing. Mail is queued in the `email_outbox` table in
+the same transaction as the ticket change and delivered by a background loop with retries
+(1, 5, 15, then 60 minutes, `failed` after 10 attempts).
+
+What is read: unseen messages in the mailbox, every `MAIL_POLL_INTERVAL`. A reply from the
+ticket's requester (matched by our `Message-ID`s or a `[#number]` subject tag) is appended to
+the ticket; anything else opens a new ticket with the sender as requester. Auto-replies,
+bounces, and mail from our own address are ignored and logged. Attachments obey
+`MAX_UPLOAD_BYTES` and `ALLOWED_MIME`.
+
+Commands: `api mail-test --to you@example.com` sends one test message through the configured
+SMTP settings. `api mail-worker` runs the sender and poller without the HTTP server, for
+deployments that want mail out of the web process (running it alongside `serve` is safe).
+
+Admin API: `GET/PATCH /api/v1/email/templates[/:key]` (Go `text/template` and `html/template`
+with `.SiteName .Number .Subject .RequesterName .RequesterEmail .AgentName .Link .Message
+.MessageHTML`), `GET /api/v1/email/outbox?status=`, `POST /api/v1/email/outbox/:id/retry`,
+`GET /api/v1/email/inbound`.
+
 ## Commands
 
     make test               # full suite with coverage gate (> 75%)
