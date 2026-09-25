@@ -51,6 +51,44 @@ func TestSanitizeHTMLURLSchemes(t *testing.T) {
 	}
 }
 
+// TestSanitizeHTMLSeparatorsAndURLAttributes covers the bypasses found in the
+// final review: "/" (or a closing quote) as an attribute separator, URL
+// attributes other than href/src, and srcdoc.
+func TestSanitizeHTMLSeparatorsAndURLAttributes(t *testing.T) {
+	cases := map[string][]string{
+		`<svg/onload=alert(1)>`:                                             {"onload", "alert(1)"},
+		`<a/href="javascript:alert(1)">x</a>`:                               {"javascript:"},
+		`<svg><a xlink:href="javascript:alert(1)">x</a></svg>`:              {"javascript:"},
+		`<button formaction="javascript:alert(1)">x</button>`:               {"javascript:"},
+		`<iframe srcdoc="&lt;img src=x onerror=alert(1)&gt;"></iframe>`:     {"srcdoc", "onerror"},
+		`<div srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;">x</div>`:       {"srcdoc", "alert(1)"},
+		`<a href="https://ok"onclick="alert(1)">x</a>`:                      {"onclick", "alert(1)"},
+		`<p/ONMOUSEOVER='alert(1)'>x</p>`:                                   {"onmouseover", "alert(1)"},
+		`<form><input type=submit formaction=javascript:alert(1)></form>`:   {"javascript:"},
+		`<video poster="javascript:alert(1)"></video>`:                      {"javascript:"},
+		`<table background="javascript:alert(1)"></table>`:                  {"javascript:"},
+		`<object data="javascript:alert(1)"></object><x data="vbscript:y">`: {"javascript:", "vbscript:"},
+		`<a/href="https://ok"/onclick="alert(1)"/title="t">x</a>`:           {"onclick", "alert(1)"},
+		`<isindex action="javascript:alert(1)">`:                            {"javascript:"},
+	}
+	for in, bads := range cases {
+		out := strings.ToLower(SanitizeHTML(in))
+		for _, bad := range bads {
+			if strings.Contains(out, bad) {
+				t.Errorf("SanitizeHTML(%s) = %s: still contains %q", in, out, bad)
+			}
+		}
+	}
+	// Benign content survives, including "/" inside URLs.
+	in := `<a href="https://ok.test/a/b?c=d">x</a><img src="cid:img1"/><p class="x">online=yes</p>`
+	out := SanitizeHTML(in)
+	for _, good := range []string{`href="https://ok.test/a/b?c=d"`, `src="cid:img1"`, `<p class="x">`} {
+		if !strings.Contains(out, good) {
+			t.Fatalf("output lost %q: %s", good, out)
+		}
+	}
+}
+
 func TestHTMLToText(t *testing.T) {
 	in := "<p>Hello &amp; welcome</p><div>Line<br>break</div><ul><li>one</li><li>two</li></ul><script>x</script>"
 	got := HTMLToText(in)

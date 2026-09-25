@@ -12,12 +12,20 @@ import (
 var (
 	reDropElements    = regexp.MustCompile(`(?is)<(script|style|iframe|object|embed|form)\b[^>]*>.*?</\s*(script|style|iframe|object|embed|form)\s*>`)
 	reDropSelfClosing = regexp.MustCompile(`(?is)<(script|style|iframe|object|embed|form)\b[^>]*/?>`)
-	reOnAttr          = regexp.MustCompile(`(?is)\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
-	reURLAttr         = regexp.MustCompile(`(?is)\s+(href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
-	reBreaks          = regexp.MustCompile(`(?is)<br\s*/?>|</p\s*>|</div\s*>|</li\s*>|</tr\s*>|</h[1-6]\s*>`)
-	reTags            = regexp.MustCompile(`(?s)<[^>]+>`)
-	reBlankRuns       = regexp.MustCompile(`\n{3,}`)
-	reTrailingWS      = regexp.MustCompile(`[ \t]+\n`)
+	// Attribute patterns start at a separator: whitespace, "/" (HTML5 treats
+	// it as one inside a tag) or the closing quote of the previous value
+	// (`href="x"onclick=...` is parsed as two attributes). Group 1 is that
+	// separator so a quote can be put back.
+	reOnAttr     = regexp.MustCompile(`(?is)([\s/"'])[\s/]*on[^\s/>="']*\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+	reSrcdocAttr = regexp.MustCompile(`(?is)([\s/"'])[\s/]*srcdoc\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+	// reURLAttr matches every attribute that takes a URL browsers may follow
+	// or load: any name ending in href/src/action (formaction, xlink:href,
+	// ...) plus data, poster and background.
+	reURLAttr    = regexp.MustCompile(`(?is)([\s/"'])[\s/]*([a-z0-9_:.-]*(?:href|src|action)|data|poster|background)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+	reBreaks     = regexp.MustCompile(`(?is)<br\s*/?>|</p\s*>|</div\s*>|</li\s*>|</tr\s*>|</h[1-6]\s*>`)
+	reTags       = regexp.MustCompile(`(?s)<[^>]+>`)
+	reBlankRuns  = regexp.MustCompile(`\n{3,}`)
+	reTrailingWS = regexp.MustCompile(`[ \t]+\n`)
 )
 
 // allowedURLSchemes are the only URL schemes left untouched by SanitizeHTML
@@ -63,19 +71,41 @@ func hasDisallowedScheme(norm string) bool {
 func SanitizeHTML(s string) string {
 	s = reDropElements.ReplaceAllString(s, "")
 	s = reDropSelfClosing.ReplaceAllString(s, "")
-	s = reOnAttr.ReplaceAllString(s, "")
+	// Removing an attribute can join text into a new one, so repeat until
+	// nothing changes (bounded; each pass only shrinks the string).
+	for i := 0; i < 16; i++ {
+		next := reSrcdocAttr.ReplaceAllStringFunc(reOnAttr.ReplaceAllStringFunc(s, dropAttr(reOnAttr)), dropAttr(reSrcdocAttr))
+		if next == s {
+			break
+		}
+		s = next
+	}
 	s = reURLAttr.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reURLAttr.FindStringSubmatch(m)
-		name, val := sub[1], sub[2]
+		name, val := sub[2], sub[3]
 		if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
 			val = val[1 : len(val)-1]
 		}
 		if hasDisallowedScheme(normalizeURLAttr(val)) {
-			return " " + name + `="#"`
+			return keptSeparator(sub[1]) + " " + name + `="#"`
 		}
 		return m
 	})
 	return s
+}
+
+// dropAttr removes a matched attribute, keeping a quote that separated it.
+func dropAttr(re *regexp.Regexp) func(string) string {
+	return func(m string) string { return keptSeparator(re.FindStringSubmatch(m)[1]) }
+}
+
+// keptSeparator returns sep when it is a quote (the end of the previous
+// value, which must stay) and "" for whitespace or "/".
+func keptSeparator(sep string) string {
+	if sep == `"` || sep == "'" {
+		return sep
+	}
+	return ""
 }
 
 // HTMLToText turns HTML into readable plain text: block ends become newlines,
