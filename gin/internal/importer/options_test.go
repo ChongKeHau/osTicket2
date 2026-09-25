@@ -27,6 +27,7 @@ func TestOptionsValidateErrors(t *testing.T) {
 		{"empty dsn", Options{}, "--mysql-dsn is required"},
 		{"batch", Options{MySQLDSN: "x", Batch: -1}, "--batch must be at least 1"},
 		{"tz", Options{MySQLDSN: "x", Timezone: "Mars/Olympus"}, "--timezone"},
+		{"prefix", Options{MySQLDSN: "x", Prefix: "ost`;"}, "--prefix"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

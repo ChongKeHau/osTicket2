@@ -34,6 +34,13 @@ const (
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(os.Args[1:]); err != nil {
+		var ee *exitError
+		if errors.As(err, &ee) {
+			if ee.err != nil {
+				slog.Error("fatal", "err", ee.err)
+			}
+			os.Exit(ee.code)
+		}
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -46,17 +53,20 @@ func run(args []string) error {
 		args = args[1:]
 	}
 	switch cmd {
-	case "serve", "create-admin", "gc-files":
+	case "serve", "create-admin", "gc-files", "import-osticket":
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, create-admin or gc-files)", cmd)
+		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files or import-osticket)", cmd)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if cmd == "import-osticket" {
+		return importOsticket(ctx, args)
 	}
 
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -71,7 +81,7 @@ func run(args []string) error {
 	case "gc-files":
 		return gcFiles(ctx, cfg, pool, args)
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, create-admin or gc-files)", cmd)
+		return fmt.Errorf("unknown command %q (expected serve, create-admin, gc-files or import-osticket)", cmd)
 	}
 }
 

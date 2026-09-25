@@ -4,8 +4,11 @@ package importer
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 )
+
+var prefixPattern = regexp.MustCompile(`^[A-Za-z0-9_]*$`)
 
 // Options are the import-osticket command's inputs.
 type Options struct {
@@ -26,6 +29,9 @@ func (o *Options) Validate() error {
 	}
 	if o.Prefix == "" {
 		o.Prefix = "ost_"
+	}
+	if !prefixPattern.MatchString(o.Prefix) {
+		return fmt.Errorf("--prefix %q must contain only letters, digits and underscores", o.Prefix)
 	}
 	if o.Timezone == "" {
 		o.Timezone = "UTC"
