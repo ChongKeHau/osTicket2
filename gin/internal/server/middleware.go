@@ -25,7 +25,12 @@ const filesPathPrefix = "/api/v1/files"
 // body of unbounded size before Gin's JSON binder ever runs.
 func MaxBodyBytes() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !strings.HasPrefix(c.Request.URL.Path, filesPathPrefix) {
+		p := c.Request.URL.Path
+		// Exempt exactly /api/v1/files and its subpaths, not merely any path
+		// that has that string as a prefix: HasPrefix alone would also
+		// exempt an unrelated route like /api/v1/filesets.
+		exempt := p == filesPathPrefix || strings.HasPrefix(p, filesPathPrefix+"/")
+		if !exempt {
 			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxJSONBodyBytes)
 		}
 		c.Next()

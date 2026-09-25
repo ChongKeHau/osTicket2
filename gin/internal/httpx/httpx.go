@@ -69,11 +69,17 @@ func write(c *gin.Context, status int, code, msg string, fields map[string]strin
 	c.AbortWithStatusJSON(status, gin.H{"error": errorBody{Code: code, Message: msg, Fields: fields}})
 }
 
-// BindJSON binds the body into dst. On failure it writes a 400 and returns false.
+// BindJSON binds the body into dst. On failure it writes a 400 (413 for an
+// oversized body) and returns false.
 func BindJSON(c *gin.Context, dst any) bool {
 	err := c.ShouldBindJSON(dst)
 	if err == nil {
 		return true
+	}
+	var mbErr *http.MaxBytesError
+	if errors.As(err, &mbErr) {
+		Fail(c, apperr.ErrPayloadTooLarge)
+		return false
 	}
 	var verrs validator.ValidationErrors
 	if errors.As(err, &verrs) {

@@ -32,6 +32,7 @@ const (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(os.Args[1:]); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -104,6 +105,10 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port), Handler: engine,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// No WriteTimeout: file downloads stream and may legitimately take
+		// longer than any single-request deadline we'd want to impose here.
 	}
 	done := make(chan error, 1)
 	go func() {

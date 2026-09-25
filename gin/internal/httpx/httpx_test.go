@@ -93,6 +93,29 @@ func TestBindJSONReportsJSONFieldNames(t *testing.T) {
 	}
 }
 
+// TestBindJSONMapsMaxBytesErrorTo413 proves an oversized body wrapped by
+// http.MaxBytesReader (as server.MaxBodyBytes does for every JSON route)
+// gets the 413 payload_too_large envelope, not the generic 400 "malformed
+// json" that a raw io error would otherwise produce.
+func TestBindJSONMapsMaxBytesErrorTo413(t *testing.T) {
+	type in struct {
+		V string `json:"v"`
+	}
+	r := gin.New()
+	r.POST("/x", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5)
+		var v in
+		if !BindJSON(c, &v) {
+			return
+		}
+		c.Status(204)
+	})
+	w, e := do(t, r, http.MethodPost, "/x", `{"v":"way too long for the limit"}`)
+	if w.Code != http.StatusRequestEntityTooLarge || e.Error.Code != "payload_too_large" {
+		t.Fatalf("oversized body: %d %+v", w.Code, e.Error)
+	}
+}
+
 func TestParsePage(t *testing.T) {
 	cases := []struct {
 		query   string

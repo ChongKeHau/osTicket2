@@ -83,6 +83,18 @@ func TestMaxBodyBytes(t *testing.T) {
 			}
 			c.String(http.StatusOK, fmt.Sprintf("%d", len(b)))
 		})
+		// A path that merely starts with the /api/v1/files string as a
+		// prefix (not a real path segment boundary) must still be capped:
+		// exempting it would be a prefix-matching bug letting an unrelated
+		// route dodge the body limit.
+		public.POST("/filesets/echo-len", func(c *gin.Context) {
+			b, err := io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.String(http.StatusBadRequest, "err: %v", err)
+				return
+			}
+			c.String(http.StatusOK, fmt.Sprintf("%d", len(b)))
+		})
 	}})
 
 	big := bytes.Repeat([]byte("a"), 2<<20) // 2 MiB
@@ -107,6 +119,27 @@ func TestMaxBodyBytes(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || w.Body.String() != fmt.Sprintf("%d", len(big)) {
 		t.Fatalf("/api/v1/files must not be size-capped by MaxBodyBytes: %d %q", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/filesets/echo-len", bytes.NewReader(big))
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code < 400 || w.Code >= 500 {
+		t.Fatalf("/api/v1/filesets must still be size-capped by MaxBodyBytes: %d", w.Code)
+	}
+}
+
+// TestPrivateGroupFailsClosedWithoutRequireAuth proves that omitting
+// Options.RequireAuth doesn't silently open every private route: it must
+// deny with 401, not let requests through unauthenticated.
+func TestPrivateGroupFailsClosedWithoutRequireAuth(t *testing.T) {
+	r := New(Options{Pinger: pinger{}, Mount: func(public, private *gin.RouterGroup) {
+		private.GET("/secret", func(c *gin.Context) { c.Status(200) })
+	}})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/secret", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("nil RequireAuth must fail closed with 401, got %d", w.Code)
 	}
 }
 

@@ -19,7 +19,10 @@ type Pinger interface {
 type Options struct {
 	Pinger      Pinger
 	CORSOrigins []string
-	// RequireAuth guards the private group. Nil means no auth (tests only).
+	// RequireAuth guards the private group. Nil fails closed: every private
+	// route returns 401, rather than silently admitting unauthenticated
+	// requests. Tests that need an open private group must pass an explicit
+	// pass-through middleware.
 	RequireAuth gin.HandlerFunc
 	// Mount registers feature routes on the public and private /api/v1 groups.
 	Mount func(public, private *gin.RouterGroup)
@@ -33,9 +36,11 @@ func New(o Options) *gin.Engine {
 	api := r.Group("/api/v1")
 	public := api.Group("")
 	private := api.Group("")
-	if o.RequireAuth != nil {
-		private.Use(o.RequireAuth)
+	requireAuth := o.RequireAuth
+	if requireAuth == nil {
+		requireAuth = func(c *gin.Context) { httpx.Fail(c, apperr.ErrUnauthorized) }
 	}
+	private.Use(requireAuth)
 	if o.Mount != nil {
 		o.Mount(public, private)
 	}
