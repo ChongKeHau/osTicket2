@@ -8,6 +8,7 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"net/textproto"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,9 @@ type Outgoing struct {
 
 // Build renders an RFC 5322 multipart/alternative message.
 func Build(o Outgoing) ([]byte, error) {
+	if err := validateHeaders(o); err != nil {
+		return nil, err
+	}
 	if o.Date.IsZero() {
 		o.Date = time.Now()
 	}
@@ -76,4 +80,18 @@ func Build(o Outgoing) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// validateHeaders rejects values that would let a caller inject extra header
+// lines (CRLF) into the message, or leave an address empty.
+func validateHeaders(o Outgoing) error {
+	if o.From.Address == "" || o.To.Address == "" {
+		return fmt.Errorf("invalid header value")
+	}
+	for _, v := range []string{o.From.Address, o.To.Address, o.From.Name, o.To.Name, o.Subject} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("invalid header value")
+		}
+	}
+	return nil
 }

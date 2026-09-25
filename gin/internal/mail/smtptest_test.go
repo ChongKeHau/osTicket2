@@ -18,6 +18,7 @@ type fakeSMTP struct {
 	rejectTo  string // RCPT TO address to reject with 550
 	failData  bool   // reply 451 after DATA
 	authUsers map[string]string
+	accepted  int // number of connections accepted
 }
 
 func startFakeSMTP(t *testing.T) *fakeSMTP {
@@ -33,11 +34,20 @@ func startFakeSMTP(t *testing.T) *fakeSMTP {
 			if err != nil {
 				return
 			}
+			s.mu.Lock()
+			s.accepted++
+			s.mu.Unlock()
 			go s.serve(c)
 		}
 	}()
 	t.Cleanup(func() { ln.Close() })
 	return s
+}
+
+func (s *fakeSMTP) connections() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.accepted
 }
 
 func (s *fakeSMTP) serve(c net.Conn) {

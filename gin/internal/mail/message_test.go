@@ -74,3 +74,25 @@ func TestBuildWithoutThreadingOrAuto(t *testing.T) {
 		t.Fatalf("raw = %s", s)
 	}
 }
+
+func TestBuildRejectsHeaderInjection(t *testing.T) {
+	base := Outgoing{From: Address{Address: "a@b.test"}, To: Address{Address: "c@d.test"}, Subject: "s", MessageID: "<x@b.test>", Text: "t", HTML: "<p>t</p>"}
+
+	withInjectedTo := base
+	withInjectedTo.To.Address = "x@y.test\r\nBcc: z@y.test"
+	if _, err := Build(withInjectedTo); err == nil {
+		t.Fatal("expected error for CRLF in To address")
+	}
+
+	withInjectedSubject := base
+	withInjectedSubject.Subject = "a\nb"
+	if _, err := Build(withInjectedSubject); err == nil {
+		t.Fatal("expected error for newline in Subject")
+	}
+
+	withEmptyTo := base
+	withEmptyTo.To.Address = ""
+	if _, err := Build(withEmptyTo); err == nil {
+		t.Fatal("expected error for empty To address")
+	}
+}

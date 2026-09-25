@@ -46,14 +46,31 @@ func NewSender(b db.Beginner, t Transport, from Address, batch int) *Sender {
 	return &Sender{db: b, t: t, from: from, batch: batch, log: slog.Default()}
 }
 
-// RunOnce claims one batch and sends it. Rows stay locked for the duration, so
-// a second worker skips them.
+// RunOnce claims one batch and sends it over one connection. Rows stay locked
+// for the duration, so a second worker skips them.
 func (s *Sender) RunOnce(ctx context.Context) (sent, failed int, err error) {
 	err = db.WithTx(ctx, s.db, func(q *db.Queries) error {
 		rows, err := q.ClaimOutbox(ctx, int32(s.batch))
 		if err != nil {
 			return err
 		}
+		if len(rows) == 0 {
+			return nil
+		}
+		sess, openErr := s.t.Open(ctx)
+		if openErr != nil {
+			// A dial failure isn't any one row's fault: back off every row we
+			// claimed rather than leaving them pending with a burned attempt
+			// but no record of why.
+			for _, r := range rows {
+				if err := s.markFailed(ctx, q, r, openErr); err != nil {
+					return err
+				}
+				failed++
+			}
+			return nil
+		}
+		defer sess.Close()
 		for _, r := range rows {
 			raw, buildErr := Build(Outgoing{
 				From: s.from, To: Address{Name: r.ToName, Address: r.ToAddress}, Subject: r.Subject,
@@ -62,7 +79,7 @@ func (s *Sender) RunOnce(ctx context.Context) (sent, failed int, err error) {
 			})
 			sendErr := buildErr
 			if sendErr == nil {
-				sendErr = s.t.Send(ctx, s.from.Address, r.ToAddress, raw)
+				sendErr = sess.Send(ctx, s.from.Address, r.ToAddress, raw)
 			}
 			if sendErr == nil {
 				if err := q.MarkOutboxSent(ctx, r.ID); err != nil {
@@ -71,21 +88,29 @@ func (s *Sender) RunOnce(ctx context.Context) (sent, failed int, err error) {
 				sent++
 				continue
 			}
-			failed++
-			delay, dead := Backoff(int(r.Attempts))
-			status := db.EmailStatusPending
-			if dead {
-				status = db.EmailStatusFailed
-			}
-			msg := sendErr.Error()
-			if err := q.MarkOutboxFailed(ctx, db.MarkOutboxFailedParams{ID: r.ID, LastError: &msg, NextAttemptAt: time.Now().Add(delay), Status: status}); err != nil {
+			if err := s.markFailed(ctx, q, r, sendErr); err != nil {
 				return err
 			}
-			s.log.Warn("email send failed", "outbox_id", r.ID, "to", r.ToAddress, "attempt", r.Attempts, "status", status, "err", msg)
+			failed++
 		}
 		return nil
 	})
 	return sent, failed, err
+}
+
+// markFailed records sendErr against r via the backoff schedule.
+func (s *Sender) markFailed(ctx context.Context, q *db.Queries, r db.EmailOutbox, sendErr error) error {
+	delay, dead := Backoff(int(r.Attempts))
+	status := db.EmailStatusPending
+	if dead {
+		status = db.EmailStatusFailed
+	}
+	msg := sendErr.Error()
+	if err := q.MarkOutboxFailed(ctx, db.MarkOutboxFailedParams{ID: r.ID, LastError: &msg, NextAttemptAt: time.Now().Add(delay), Status: status}); err != nil {
+		return err
+	}
+	s.log.Warn("email send failed", "outbox_id", r.ID, "to", r.ToAddress, "attempt", r.Attempts, "status", status, "err", msg)
+	return nil
 }
 
 // Run loops RunOnce every interval until ctx is done.

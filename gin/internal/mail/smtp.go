@@ -9,9 +9,15 @@ import (
 	"time"
 )
 
-// Transport delivers one raw message.
+// Transport opens one session per batch.
 type Transport interface {
+	Open(ctx context.Context) (Session, error)
+}
+
+// Session sends messages over one connection.
+type Session interface {
 	Send(ctx context.Context, from, to string, raw []byte) error
+	Close() error
 }
 
 // SMTPOptions configure the SMTP transport.
@@ -24,7 +30,7 @@ type SMTPOptions struct {
 	InsecureSkipVerify bool
 }
 
-// SMTP sends over one connection per message.
+// SMTP opens sessions over one connection per batch.
 type SMTP struct{ o SMTPOptions }
 
 func NewSMTP(o SMTPOptions) *SMTP {
@@ -34,7 +40,9 @@ func NewSMTP(o SMTPOptions) *SMTP {
 	return &SMTP{o: o}
 }
 
-func (s *SMTP) dial(ctx context.Context) (*smtp.Client, error) {
+// Open dials, greets, negotiates TLS, and authenticates, returning a Session
+// that can send multiple messages over the resulting connection.
+func (s *SMTP) Open(ctx context.Context) (Session, error) {
 	addr := net.JoinHostPort(s.o.Host, fmt.Sprint(s.o.Port))
 	d := &net.Dialer{Timeout: s.o.Timeout}
 	tlsCfg := &tls.Config{ServerName: s.o.Host, InsecureSkipVerify: s.o.InsecureSkipVerify} //nolint:gosec // opt-in for tests
@@ -66,23 +74,30 @@ func (s *SMTP) dial(ctx context.Context) (*smtp.Client, error) {
 			return nil, fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	return c, nil
+	return &smtpSession{c: c}, nil
 }
 
-// Send delivers raw to one recipient.
-func (s *SMTP) Send(ctx context.Context, from, to string, raw []byte) error {
-	c, err := s.dial(ctx)
-	if err != nil {
+// smtpSession sends messages over one *smtp.Client connection.
+type smtpSession struct{ c *smtp.Client }
+
+// Send delivers raw to one recipient. On any error the connection is reset so
+// the next message on the same session starts clean.
+func (s *smtpSession) Send(_ context.Context, from, to string, raw []byte) error {
+	if err := s.send(from, to, raw); err != nil {
+		_ = s.c.Reset()
 		return err
 	}
-	defer c.Close()
-	if err := c.Mail(from); err != nil {
+	return nil
+}
+
+func (s *smtpSession) send(from, to string, raw []byte) error {
+	if err := s.c.Mail(from); err != nil {
 		return fmt.Errorf("smtp mail from: %w", err)
 	}
-	if err := c.Rcpt(to); err != nil {
+	if err := s.c.Rcpt(to); err != nil {
 		return fmt.Errorf("smtp rcpt to: %w", err)
 	}
-	w, err := c.Data()
+	w, err := s.c.Data()
 	if err != nil {
 		return fmt.Errorf("smtp data: %w", err)
 	}
@@ -92,5 +107,13 @@ func (s *SMTP) Send(ctx context.Context, from, to string, raw []byte) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("smtp data close: %w", err)
 	}
-	return c.Quit()
+	return nil
+}
+
+// Close ends the session, falling back to a hard close if Quit fails.
+func (s *smtpSession) Close() error {
+	if err := s.c.Quit(); err != nil {
+		return s.c.Close()
+	}
+	return nil
 }

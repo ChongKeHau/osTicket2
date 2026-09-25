@@ -22,8 +22,13 @@ func smtpOpts(addr string) SMTPOptions {
 func TestSMTPTransportSends(t *testing.T) {
 	srv := startFakeSMTP(t)
 	tr := NewSMTP(smtpOpts(srv.addr))
+	sess, err := tr.Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
 	raw, _ := Build(Outgoing{From: Address{Address: "a@b.test"}, To: Address{Address: "c@d.test"}, Subject: "hi", MessageID: "<m@b.test>", Text: "t", HTML: "<p>t</p>"})
-	if err := tr.Send(context.Background(), "a@b.test", "c@d.test", raw); err != nil {
+	if err := sess.Send(context.Background(), "a@b.test", "c@d.test", raw); err != nil {
 		t.Fatal(err)
 	}
 	got := srv.received()
@@ -31,7 +36,7 @@ func TestSMTPTransportSends(t *testing.T) {
 		t.Fatalf("received = %q", got)
 	}
 	srv.rejectTo = "nobody@d.test"
-	err := tr.Send(context.Background(), "a@b.test", "nobody@d.test", raw)
+	err = sess.Send(context.Background(), "a@b.test", "nobody@d.test", raw)
 	if err == nil || !strings.Contains(err.Error(), "550") {
 		t.Fatalf("rejection error = %v", err)
 	}
@@ -56,6 +61,8 @@ type flakyTransport struct {
 	to    []string
 }
 
+func (f *flakyTransport) Open(context.Context) (Session, error) { return f, nil }
+
 func (f *flakyTransport) Send(_ context.Context, _, to string, _ []byte) error {
 	f.calls++
 	f.to = append(f.to, to)
@@ -64,6 +71,8 @@ func (f *flakyTransport) Send(_ context.Context, _, to string, _ []byte) error {
 	}
 	return nil
 }
+
+func (f *flakyTransport) Close() error { return nil }
 
 func queueOne(t *testing.T, q *db.Queries, tid int64, to string) int64 {
 	t.Helper()
@@ -109,6 +118,51 @@ func TestSenderMarksSentAndRecordsRejection(t *testing.T) {
 	// Nothing due now.
 	if sent, failed, _ := s.RunOnce(ctx); sent != 0 || failed != 0 {
 		t.Fatal("row scheduled in the future must not be claimed")
+	}
+}
+
+func TestSenderOpensOneConnectionPerBatch(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	tid := newTicket(t, q)
+	queueOne(t, q, tid, "a@example.test")
+	queueOne(t, q, tid, "b@example.test")
+	queueOne(t, q, tid, "c@example.test")
+	srv := startFakeSMTP(t)
+	s := NewSender(tx, NewSMTP(smtpOpts(srv.addr)), Address{Name: "Desk", Address: "desk@example.test"}, 20)
+	sent, failed, err := s.RunOnce(ctx)
+	if err != nil || sent != 3 || failed != 0 {
+		t.Fatalf("run = %d %d %v", sent, failed, err)
+	}
+	if n := srv.connections(); n != 1 {
+		t.Fatalf("connections = %d, want 1", n)
+	}
+	if got := srv.received(); len(got) != 3 {
+		t.Fatalf("received = %d messages, want 3", len(got))
+	}
+}
+
+func TestSenderDialFailureBacksOffAllRows(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	tid := newTicket(t, q)
+	id1 := queueOne(t, q, tid, "a@example.test")
+	id2 := queueOne(t, q, tid, "b@example.test")
+	// Nothing listens on 127.0.0.1:1, so Open fails to dial.
+	tr := NewSMTP(SMTPOptions{Host: "127.0.0.1", Port: 1, TLS: "none", Timeout: 2 * time.Second})
+	s := NewSender(tx, tr, Address{Address: "desk@example.test"}, 20)
+	before := time.Now()
+	sent, failed, err := s.RunOnce(ctx)
+	if err != nil || sent != 0 || failed != 2 {
+		t.Fatalf("run = %d %d %v", sent, failed, err)
+	}
+	for _, id := range []int64{id1, id2} {
+		row, _ := q.GetOutbox(ctx, id)
+		if row.Status != db.EmailStatusPending || row.Attempts != 1 || row.LastError == nil || !row.NextAttemptAt.After(before) {
+			t.Fatalf("row %d = %+v", id, row)
+		}
 	}
 }
 
