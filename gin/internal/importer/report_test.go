@@ -61,3 +61,30 @@ func TestLookupInitialised(t *testing.T) {
 		t.Fatal("maps must be initialised")
 	}
 }
+
+func TestReportNote(t *testing.T) {
+	r := NewReport()
+	r.Note(EntityDepartments, 3, "renamed to Billing (2)")
+	c := r.Counter(EntityDepartments)
+	if c.Skipped != 0 || len(c.Samples) != 1 || !strings.Contains(r.String(), "renamed to Billing (2)") {
+		t.Fatalf("note not recorded: %+v\n%s", c, r.String())
+	}
+	if r.NeedsAttention() {
+		t.Fatal("notes never need attention")
+	}
+}
+
+func TestLookupAllocID(t *testing.T) {
+	lk := NewLookup()
+	lk.markTaken("ticket_priority", 1)
+	lk.markTaken("ticket_priority", 2)
+	if got := lk.allocID("ticket_priority", 5); got != 5 {
+		t.Fatalf("free id kept: %d", got)
+	}
+	if got := lk.allocID("ticket_priority", 2); got != 6 {
+		t.Fatalf("collision moves above max: %d", got)
+	}
+	if got := lk.allocID("ticket_priority", 6); got != 7 {
+		t.Fatalf("second collision: %d", got)
+	}
+}

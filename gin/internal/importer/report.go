@@ -86,6 +86,14 @@ func (r *Report) Skip(e Entity, id int64, reason string) {
 	}
 }
 
+// Note records an informational sample (renames, placeholders) without counting a skip.
+func (r *Report) Note(e Entity, id int64, note string) {
+	c := r.Counter(e)
+	if len(c.Samples) < maxSamples {
+		c.Samples = append(c.Samples, Sample{ID: id, Reason: note})
+	}
+}
+
 // NeedsAttention reports whether tickets were skipped for anything other than a
 // deleted status, or any attachment was skipped. Those are the exit-code-3 cases.
 func (r *Report) NeedsAttention() bool {
@@ -108,7 +116,7 @@ func (r *Report) String() string {
 	}
 	for _, e := range entityOrder {
 		c := r.counters[e]
-		if c.Skipped == 0 {
+		if c.Skipped == 0 && len(c.Samples) == 0 {
 			continue
 		}
 		reasons := make([]string, 0, len(c.Reasons))
@@ -116,7 +124,11 @@ func (r *Report) String() string {
 			reasons = append(reasons, k)
 		}
 		sort.Strings(reasons)
-		fmt.Fprintf(&b, "\n%s skipped:\n", e)
+		if c.Skipped == 0 {
+			fmt.Fprintf(&b, "\n%s notes:\n", e)
+		} else {
+			fmt.Fprintf(&b, "\n%s skipped:\n", e)
+		}
 		for _, k := range reasons {
 			fmt.Fprintf(&b, "  %6d  %s\n", c.Reasons[k], k)
 		}
