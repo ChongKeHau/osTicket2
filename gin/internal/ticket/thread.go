@@ -17,6 +17,14 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// threadLimitMin/Max bound Service.Thread's page size, whether the caller
+// came through the handler (which already validates the query param) or
+// called the service directly.
+const (
+	threadLimitMin = 1
+	threadLimitMax = 200
+)
+
 type ReplyInput struct {
 	Body     string  `json:"body" binding:"required"`
 	Format   string  `json:"format" binding:"omitempty,oneof=html text"`
@@ -89,6 +97,9 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 			return err
 		}
 		st, err := q.GetStaff(ctx, p.StaffID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrUnauthorized
+		}
 		if err != nil {
 			return err
 		}
@@ -129,6 +140,9 @@ func (s *service) Note(ctx context.Context, p auth.Principal, id int64, in NoteI
 			return err
 		}
 		st, err := q.GetStaff(ctx, p.StaffID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrUnauthorized
+		}
 		if err != nil {
 			return err
 		}
@@ -156,6 +170,12 @@ func (s *service) Note(ctx context.Context, p auth.Principal, id int64, in NoteI
 }
 
 func (s *service) Thread(ctx context.Context, p auth.Principal, id int64, after int64, limit int) (*Thread, error) {
+	switch {
+	case limit < threadLimitMin:
+		limit = threadLimitMin
+	case limit > threadLimitMax:
+		limit = threadLimitMax
+	}
 	q := db.New(s.db)
 	if _, err := loadVisible(ctx, q, p, id); err != nil {
 		return nil, err
@@ -202,10 +222,16 @@ func (s *service) SetStatus(ctx context.Context, p auth.Principal, id int64, sta
 func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffID *int64) (*Ticket, error) {
 	return s.mutate(ctx, p, id, func(q *db.Queries, row db.GetTicketRow) error {
 		if staffID == nil {
+			if row.AssignedStaffID == nil {
+				return nil // already unassigned: no-op, no event
+			}
 			if err := q.SetTicketAssignee(ctx, db.SetTicketAssigneeParams{ID: id, AssignedStaffID: nil}); err != nil {
 				return err
 			}
 			return event(ctx, q, id, &p.StaffID, db.TicketEventKindUnassigned, nil)
+		}
+		if row.AssignedStaffID != nil && *row.AssignedStaffID == *staffID {
+			return nil // already assigned to this staff: no-op, no event
 		}
 		st, err := q.GetStaff(ctx, *staffID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -233,13 +259,16 @@ func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffI
 
 func (s *service) Transfer(ctx context.Context, p auth.Principal, id int64, deptID int64) (*Ticket, error) {
 	return s.mutate(ctx, p, id, func(q *db.Queries, row db.GetTicketRow) error {
+		// Visibility runs before existence, same as Create: an agent
+		// probing a nonexistent department id must get the same 403 as a
+		// real but invisible one.
+		if !p.CanSeeDept(deptID) {
+			return fmt.Errorf("%w: cannot transfer to that department", apperr.ErrForbidden)
+		}
 		if _, err := q.GetDepartment(ctx, deptID); errors.Is(err, pgx.ErrNoRows) {
 			return apperr.Validation("dept_id", "unknown department")
 		} else if err != nil {
 			return err
-		}
-		if !p.CanSeeDept(deptID) {
-			return fmt.Errorf("%w: cannot transfer to that department", apperr.ErrForbidden)
 		}
 		if deptID == row.DeptID {
 			return nil
@@ -319,18 +348,20 @@ func applyStatus(ctx context.Context, q *db.Queries, p auth.Principal, row db.Ge
 	if err != nil {
 		return err
 	}
-	closedAt := row.ClosedAt
+	var doClose, doReopen bool
 	kind := db.TicketEventKindStatusChanged
 	switch {
 	case row.StatusState == db.TicketStateOpen && ns.State != db.TicketStateOpen:
-		now := time.Now().UTC()
-		closedAt = &now
+		doClose = true
 		kind = db.TicketEventKindClosed
 	case row.StatusState != db.TicketStateOpen && ns.State == db.TicketStateOpen:
-		closedAt = nil
+		doReopen = true
 		kind = db.TicketEventKindReopened
 	}
-	if err := q.SetTicketStatus(ctx, db.SetTicketStatusParams{ID: row.ID, StatusID: statusID, ClosedAt: closedAt}); err != nil {
+	// closed_at is computed in SQL from clock_timestamp() (see thread.sql),
+	// not written from a Go-side time.Now(), so it can never disagree with
+	// the database clock.
+	if err := q.SetTicketStatus(ctx, db.SetTicketStatusParams{ID: row.ID, StatusID: statusID, Close: doClose, Reopen: doReopen}); err != nil {
 		return err
 	}
 	return event(ctx, q, row.ID, &p.StaffID, kind, map[string]any{"from": row.StatusID, "to": statusID})
@@ -510,8 +541,20 @@ func (h *Handler) assign(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	raw, ok := readRawJSON(c)
+	if !ok {
+		return
+	}
 	var in AssignInput
 	if !httpx.BindJSON(c, &in) {
+		return
+	}
+	// staff_id must be present: {} is a validation error, distinct from the
+	// explicit {"staff_id": null} that unassigns.
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &keys)
+	if _, present := keys["staff_id"]; !present {
+		httpx.Fail(c, apperr.Validation("staff_id", "required"))
 		return
 	}
 	out, err := h.svc.Assign(c.Request.Context(), p, id, in.StaffID)

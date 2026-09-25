@@ -1,6 +1,10 @@
 package ticket
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -138,9 +142,29 @@ func (h *Handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	raw, ok := readRawJSON(c)
+	if !ok {
+		return
+	}
 	var in UpdateInput
 	if !httpx.BindJSON(c, &in) {
 		return
+	}
+	// due_at/topic_id: an explicit JSON null clears the field; an absent key
+	// leaves it unchanged (BindJSON alone can't tell the two apart, since
+	// both decode to a nil pointer). extra: an explicit null means
+	// "unchanged" too (not a validation error), so it's reset to nil here in
+	// case some other zero-length-but-non-nil value slipped through binding.
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &keys)
+	if v, present := keys["due_at"]; present && string(v) == "null" {
+		in.ClearDueAt = true
+	}
+	if v, present := keys["topic_id"]; present && string(v) == "null" {
+		in.ClearTopic = true
+	}
+	if v, present := keys["extra"]; present && string(v) == "null" {
+		in.Extra = nil
 	}
 	out, err := h.svc.Update(c.Request.Context(), p, id, in)
 	if err != nil {
@@ -148,4 +172,24 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// readRawJSON reads the whole request body and restores it onto the request
+// so a subsequent httpx.BindJSON can still bind it. It's used by handlers
+// that need to distinguish an explicit JSON null from an absent key, which a
+// bound struct alone can't tell apart (both decode to a nil pointer). On
+// read failure it writes the error response and returns ok=false.
+func readRawJSON(c *gin.Context) (json.RawMessage, bool) {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			httpx.Fail(c, apperr.ErrPayloadTooLarge)
+		} else {
+			httpx.Fail(c, apperr.Validation("body", "malformed json"))
+		}
+		return nil, false
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw, true
 }

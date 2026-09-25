@@ -16,6 +16,7 @@ import (
 type fakeSvc struct {
 	lastFilter ListFilter
 	lastCreate CreateInput
+	lastUpdate UpdateInput
 	lastAfter  int64
 	lastLimit  int
 	lastAssign *int64
@@ -36,6 +37,7 @@ func (f *fakeSvc) List(_ context.Context, p auth.Principal, fl ListFilter) (*htt
 	return &httpx.List[Ticket]{Items: []Ticket{}, Page: fl.Page.Page, PageSize: fl.Page.PageSize}, nil
 }
 func (f *fakeSvc) Update(_ context.Context, p auth.Principal, id int64, in UpdateInput) (*Ticket, error) {
+	f.lastUpdate = in
 	return &Ticket{ID: id}, nil
 }
 func (f *fakeSvc) ListPriorities(context.Context) ([]Priority, error) {
@@ -137,5 +139,37 @@ func TestTicketCoreRoutes(t *testing.T) {
 	}
 	if w := do(r, http.MethodPatch, "/api/v1/tickets/1", `{"subject":"new"}`); w.Code != 200 {
 		t.Fatalf("update: %d", w.Code)
+	}
+}
+
+// TestUpdateNullSemantics proves that PATCH distinguishes an absent key from
+// an explicit JSON null: due_at/topic_id null clears the field, extra null
+// means "leave unchanged" (not a validation error).
+func TestUpdateNullSemantics(t *testing.T) {
+	f := &fakeSvc{}
+	r := newRouter(f)
+	if w := do(r, http.MethodPatch, "/api/v1/tickets/1", `{"due_at": null}`); w.Code != 200 {
+		t.Fatalf("clear due_at: %d %s", w.Code, w.Body.String())
+	}
+	if !f.lastUpdate.ClearDueAt || f.lastUpdate.DueAt != nil {
+		t.Fatalf("ClearDueAt not set from null due_at: %+v", f.lastUpdate)
+	}
+	if w := do(r, http.MethodPatch, "/api/v1/tickets/1", `{"topic_id": null}`); w.Code != 200 {
+		t.Fatalf("clear topic_id: %d %s", w.Code, w.Body.String())
+	}
+	if !f.lastUpdate.ClearTopic || f.lastUpdate.TopicID != nil {
+		t.Fatalf("ClearTopic not set from null topic_id: %+v", f.lastUpdate)
+	}
+	if w := do(r, http.MethodPatch, "/api/v1/tickets/1", `{"extra": null}`); w.Code != 200 {
+		t.Fatalf("extra null must not be a 400: %d %s", w.Code, w.Body.String())
+	}
+	if f.lastUpdate.Extra != nil {
+		t.Fatalf("extra null must mean unchanged (nil), got %s", f.lastUpdate.Extra)
+	}
+	if w := do(r, http.MethodPatch, "/api/v1/tickets/1", `{"subject":"s"}`); w.Code != 200 {
+		t.Fatalf("absent keys still work: %d", w.Code)
+	}
+	if f.lastUpdate.ClearDueAt || f.lastUpdate.ClearTopic {
+		t.Fatalf("absent due_at/topic_id must not clear: %+v", f.lastUpdate)
 	}
 }

@@ -39,6 +39,9 @@ func TestThreadRoutes(t *testing.T) {
 	if w := do(r, http.MethodPost, "/api/v1/tickets/1/status", `{"status_id":2}`); w.Code != 200 {
 		t.Fatalf("status: %d", w.Code)
 	}
+	if w := do(r, http.MethodPost, "/api/v1/tickets/1/assign", `{}`); w.Code != 400 {
+		t.Fatalf("assign missing staff_id key: %d", w.Code)
+	}
 	if w := do(r, http.MethodPost, "/api/v1/tickets/1/assign", `{"staff_id":null}`); w.Code != 200 || f.lastAssign != nil {
 		t.Fatalf("unassign: %d %v", w.Code, f.lastAssign)
 	}

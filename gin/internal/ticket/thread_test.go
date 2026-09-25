@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/grandpine/ticket-api/internal/apperr"
+	"github.com/grandpine/ticket-api/internal/auth"
 	"github.com/grandpine/ticket-api/internal/db"
 )
 
@@ -183,6 +184,79 @@ func TestAssign(t *testing.T) {
 	}
 	if n := f.count(t, `SELECT count(*) FROM ticket_event WHERE ticket_id = $1 AND kind IN ('assigned','unassigned')`, tk.ID); n != 2 {
 		t.Fatalf("assignment events: %d", n)
+	}
+}
+
+// TestAssignNoOpWhenUnchanged proves that assigning a ticket to the staff id
+// it is already assigned to (or unassigning an already-unassigned ticket)
+// writes no event and no update.
+func TestAssignNoOpWhenUnchanged(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	me := f.agent.StaffID
+	if _, err := f.svc.Assign(f.ctx, f.agent, tk.ID, &me); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Assign(f.ctx, f.agent, tk.ID, &me); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM ticket_event WHERE ticket_id = $1 AND kind = 'assigned'`, tk.ID); n != 1 {
+		t.Fatalf("repeat assign to the same staff must not write a second event: %d", n)
+	}
+	if _, err := f.svc.Assign(f.ctx, f.agent, tk.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Assign(f.ctx, f.agent, tk.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM ticket_event WHERE ticket_id = $1 AND kind = 'unassigned'`, tk.ID); n != 1 {
+		t.Fatalf("repeat unassign must not write a second event: %d", n)
+	}
+}
+
+// TestThreadLimitClamped proves Service.Thread clamps limit to [1, 200]
+// itself instead of panicking or erroring when called directly (outside the
+// handler, which already validates the query param) with an out-of-range
+// value.
+func TestThreadLimitClamped(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	if _, err := f.svc.Thread(f.ctx, f.agent, tk.ID, 0, 0); err != nil {
+		t.Fatalf("limit 0 must not panic or error: %v", err)
+	}
+	page, err := f.svc.Thread(f.ctx, f.agent, tk.ID, 0, 500)
+	if err != nil {
+		t.Fatalf("limit 500 must not panic or error: %v", err)
+	}
+	if len(page.Items) != 1 || page.NextAfter != nil {
+		t.Fatalf("limit 500 clamped to 200 against one entry: %+v", page)
+	}
+}
+
+// TestReplyAndNoteMissingStaffUnauthorized proves that a principal whose
+// staff row no longer exists (e.g. deleted between token issue and request)
+// gets 401, not a 500 from the raw pgx.ErrNoRows.
+func TestReplyAndNoteMissingStaffUnauthorized(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	ghost := auth.Principal{StaffID: 999999, DeptIDs: []int64{f.support.ID}}
+	if _, err := f.svc.Reply(f.ctx, ghost, tk.ID, ReplyInput{Body: "x"}); !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("reply with missing staff row: %v", err)
+	}
+	if _, err := f.svc.Note(f.ctx, ghost, tk.ID, NoteInput{Body: "x"}); !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("note with missing staff row: %v", err)
+	}
+}
+
+// TestTransferProbingUnknownDeptIsForbidden mirrors
+// TestCreateProbingUnknownDeptIsForbidden for transfer: the visibility check
+// must run before the existence check.
+func TestTransferProbingUnknownDeptIsForbidden(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	bad := int64(999999)
+	if _, err := f.svc.Transfer(f.ctx, f.agent, tk.ID, bad); !errors.Is(err, apperr.ErrForbidden) {
+		t.Fatalf("agent probing unknown dept via transfer must be forbidden: %v", err)
 	}
 }
 

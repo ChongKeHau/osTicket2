@@ -65,10 +65,19 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 		}
 		if deptID == nil {
 			fields["dept_id"] = "required when no topic supplies a department"
-		} else if _, err := q.GetDepartment(ctx, *deptID); errors.Is(err, pgx.ErrNoRows) {
-			fields["dept_id"] = "unknown department"
-		} else if err != nil {
-			return err
+		} else {
+			// Visibility runs before existence: an agent probing a
+			// nonexistent department id must get the same 403 as a real
+			// but invisible one, so the 400/403 split can't be used to
+			// enumerate department ids.
+			if !p.CanSeeDept(*deptID) {
+				return fmt.Errorf("%w: cannot create tickets in that department", apperr.ErrForbidden)
+			}
+			if _, err := q.GetDepartment(ctx, *deptID); errors.Is(err, pgx.ErrNoRows) {
+				fields["dept_id"] = "unknown department"
+			} else if err != nil {
+				return err
+			}
 		}
 		if priorityID == nil {
 			def, err := q.DefaultPriority(ctx)
@@ -83,9 +92,6 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 		}
 		if len(fields) > 0 {
 			return &apperr.ValidationError{Fields: fields}
-		}
-		if !p.CanSeeDept(*deptID) {
-			return fmt.Errorf("%w: cannot create tickets in that department", apperr.ErrForbidden)
 		}
 		status, err := q.DefaultStatus(ctx)
 		if err != nil {
@@ -255,6 +261,7 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 		}
 		if err := q.UpdateTicket(ctx, db.UpdateTicketParams{
 			ID: id, Subject: in.Subject, PriorityID: in.PriorityID, TopicID: in.TopicID, DueAt: in.DueAt,
+			ClearTopic: in.ClearTopic, ClearDueAt: in.ClearDueAt,
 			Extra: extra, RequesterName: in.RequesterName, RequesterEmail: in.RequesterEmail,
 		}); err != nil {
 			return err
@@ -384,10 +391,10 @@ func changedFields(in UpdateInput) []string {
 	if in.PriorityID != nil {
 		out = append(out, "priority_id")
 	}
-	if in.TopicID != nil {
+	if in.TopicID != nil || in.ClearTopic {
 		out = append(out, "topic_id")
 	}
-	if in.DueAt != nil {
+	if in.DueAt != nil || in.ClearDueAt {
 		out = append(out, "due_at")
 	}
 	if len(in.Extra) > 0 {

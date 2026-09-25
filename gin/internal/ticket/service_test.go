@@ -71,6 +71,19 @@ func TestCreateValidationAndVisibility(t *testing.T) {
 	}
 }
 
+// TestCreateProbingUnknownDeptIsForbidden proves that an agent supplying a
+// nonexistent department id gets the same 403 as a real-but-invisible one:
+// the visibility check runs before the existence check, so the 400/403 split
+// can't be used to enumerate department ids.
+func TestCreateProbingUnknownDeptIsForbidden(t *testing.T) {
+	f := newFixture(t)
+	bad := int64(999999)
+	_, err := f.svc.Create(f.ctx, f.agent, CreateInput{Subject: "s", Message: "m", RequesterEmail: "r@x.test", DeptID: &bad})
+	if !errors.Is(err, apperr.ErrForbidden) {
+		t.Fatalf("probing an unknown dept must be forbidden, not a validation error: %v", err)
+	}
+}
+
 func TestGetVisibility(t *testing.T) {
 	f := newFixture(t)
 	tk := f.create(t, f.agent, "Mine", f.support.ID)
@@ -167,6 +180,33 @@ func TestUpdate(t *testing.T) {
 	}
 	if _, err := f.svc.Update(f.ctx, f.other, tk.ID, UpdateInput{Subject: &subject}); !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("invisible: %v", err)
+	}
+}
+
+// TestUpdateClearsDueAtAndTopic proves that {"due_at": null} / {"topic_id":
+// null} clear those columns (as opposed to a merely-absent key, which leaves
+// them unchanged).
+func TestUpdateClearsDueAtAndTopic(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	// Set the initial due_at/topic_id directly (not through svc.Update) so
+	// the "edited" event count below reflects only the clearing call.
+	if _, err := f.tx.Exec(f.ctx, `UPDATE ticket SET due_at = now() + interval '1 day', topic_id = $2 WHERE id = $1`, tk.ID, f.topic.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.svc.Get(f.ctx, f.agent, tk.ID)
+	if err != nil || got.DueAt == nil || got.Topic == nil {
+		t.Fatalf("setup did not stick: %+v %v", got, err)
+	}
+	out, err := f.svc.Update(f.ctx, f.agent, tk.ID, UpdateInput{ClearDueAt: true, ClearTopic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.DueAt != nil || out.Topic != nil {
+		t.Fatalf("clear did not take effect: %+v", out)
+	}
+	if n := f.count(t, `SELECT count(*) FROM ticket_event WHERE ticket_id = $1 AND kind = 'edited' AND data->'fields' ? 'due_at' AND data->'fields' ? 'topic_id'`, tk.ID); n != 1 {
+		t.Fatalf("edited event must report cleared fields: %d", n)
 	}
 }
 

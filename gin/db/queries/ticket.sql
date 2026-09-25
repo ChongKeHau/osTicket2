@@ -81,8 +81,8 @@ WHERE (@all_depts::boolean OR t.dept_id = ANY(@dept_ids::bigint[]))
 UPDATE ticket
 SET subject = COALESCE(sqlc.narg('subject'), subject),
     priority_id = COALESCE(sqlc.narg('priority_id'), priority_id),
-    topic_id = COALESCE(sqlc.narg('topic_id'), topic_id),
-    due_at = COALESCE(sqlc.narg('due_at'), due_at),
+    topic_id = CASE WHEN @clear_topic::boolean THEN NULL ELSE COALESCE(sqlc.narg('topic_id'), topic_id) END,
+    due_at = CASE WHEN @clear_due_at::boolean THEN NULL ELSE COALESCE(sqlc.narg('due_at'), due_at) END,
     extra = COALESCE(sqlc.narg('extra'), extra),
     requester_name = COALESCE(sqlc.narg('requester_name'), requester_name),
     requester_email = COALESCE(sqlc.narg('requester_email'), requester_email),

@@ -186,16 +186,29 @@ func (q *Queries) SetTicketDept(ctx context.Context, arg SetTicketDeptParams) er
 }
 
 const setTicketStatus = `-- name: SetTicketStatus :exec
-UPDATE ticket SET status_id = $2, closed_at = $3, updated_at = now() WHERE id = $1
+UPDATE ticket
+SET status_id = $1,
+    closed_at = CASE WHEN $2::boolean THEN clock_timestamp() WHEN $3::boolean THEN NULL ELSE closed_at END,
+    updated_at = now()
+WHERE id = $4
 `
 
 type SetTicketStatusParams struct {
-	ID       int64
 	StatusID int64
-	ClosedAt *time.Time
+	Close    bool
+	Reopen   bool
+	ID       int64
 }
 
+// closed_at is set from the database clock (clock_timestamp(), not now(),
+// for the same reason as CreateTicket) rather than a Go-side time.Now(), so
+// the app server's clock can never disagree with what's stored.
 func (q *Queries) SetTicketStatus(ctx context.Context, arg SetTicketStatusParams) error {
-	_, err := q.db.Exec(ctx, setTicketStatus, arg.ID, arg.StatusID, arg.ClosedAt)
+	_, err := q.db.Exec(ctx, setTicketStatus,
+		arg.StatusID,
+		arg.Close,
+		arg.Reopen,
+		arg.ID,
+	)
 	return err
 }

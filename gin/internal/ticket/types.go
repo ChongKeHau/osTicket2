@@ -73,6 +73,12 @@ type UpdateInput struct {
 	Extra          json.RawMessage `json:"extra"`
 	RequesterName  *string         `json:"requester_name" binding:"omitempty,max=128"`
 	RequesterEmail *string         `json:"requester_email" binding:"omitempty,email,max=255"`
+	// ClearTopic and ClearDueAt are set by the handler when the request body
+	// contains an explicit `"topic_id": null` / `"due_at": null`, as opposed
+	// to the key being absent (leave unchanged). json:"-" because these are
+	// derived from raw body inspection, never bound directly.
+	ClearTopic bool `json:"-"`
+	ClearDueAt bool `json:"-"`
 }
 
 type ListFilter struct {

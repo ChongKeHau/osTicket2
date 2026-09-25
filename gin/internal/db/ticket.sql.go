@@ -402,19 +402,21 @@ const updateTicket = `-- name: UpdateTicket :exec
 UPDATE ticket
 SET subject = COALESCE($1, subject),
     priority_id = COALESCE($2, priority_id),
-    topic_id = COALESCE($3, topic_id),
-    due_at = COALESCE($4, due_at),
-    extra = COALESCE($5, extra),
-    requester_name = COALESCE($6, requester_name),
-    requester_email = COALESCE($7, requester_email),
+    topic_id = CASE WHEN $3::boolean THEN NULL ELSE COALESCE($4, topic_id) END,
+    due_at = CASE WHEN $5::boolean THEN NULL ELSE COALESCE($6, due_at) END,
+    extra = COALESCE($7, extra),
+    requester_name = COALESCE($8, requester_name),
+    requester_email = COALESCE($9, requester_email),
     updated_at = now()
-WHERE id = $8
+WHERE id = $10
 `
 
 type UpdateTicketParams struct {
 	Subject        *string
 	PriorityID     *int64
+	ClearTopic     bool
 	TopicID        *int64
+	ClearDueAt     bool
 	DueAt          *time.Time
 	Extra          []byte
 	RequesterName  *string
@@ -426,7 +428,9 @@ func (q *Queries) UpdateTicket(ctx context.Context, arg UpdateTicketParams) erro
 	_, err := q.db.Exec(ctx, updateTicket,
 		arg.Subject,
 		arg.PriorityID,
+		arg.ClearTopic,
 		arg.TopicID,
+		arg.ClearDueAt,
 		arg.DueAt,
 		arg.Extra,
 		arg.RequesterName,
