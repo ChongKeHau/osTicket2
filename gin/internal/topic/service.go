@@ -126,6 +126,12 @@ func (s *service) Delete(ctx context.Context, id int64) error {
 			return fmt.Errorf("%w: topic is referenced by tickets", apperr.ErrConflict)
 		}
 		n, err := q.DeleteTopic(ctx, id)
+		// Belt and braces beside the reference count above: a foreign key
+		// violation (e.g. a reference added between the count and the
+		// delete) maps to the same conflict instead of a raw 500.
+		if db.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: topic is referenced by tickets", apperr.ErrConflict)
+		}
 		if err != nil {
 			return err
 		}

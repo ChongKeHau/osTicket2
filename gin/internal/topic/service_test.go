@@ -59,3 +59,41 @@ func TestTopicCRUD(t *testing.T) {
 		t.Fatalf("delete referenced: %v", err)
 	}
 }
+
+// TestDeleteTopicForeignKeyViolation proves db.IsForeignKeyViolation
+// recognizes the real FK error DeleteTopic raises when a topic is still
+// referenced. This is the belt-and-braces mapping the service falls back on
+// beside its own CountTopicReferences guard: the query is called directly
+// (bypassing that guard) against a topic a ticket references.
+func TestDeleteTopicForeignKeyViolation(t *testing.T) {
+	ctx := context.Background()
+	tx := testutil.Tx(t)
+	q := db.New(tx)
+	dept, err := q.FirstDepartment(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prio, err := q.DefaultPriority(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topics, err := q.ListTopics(ctx)
+	if err != nil || len(topics) == 0 {
+		t.Fatalf("seeded topics: %+v %v", topics, err)
+	}
+	status, err := q.DefaultStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO ticket (number, subject, status_id, dept_id, topic_id, priority_id, requester_email)
+		VALUES ('000002', 's', $1, $2, $3, $4, 'r@x.test')`, status.ID, dept.ID, topics[0].ID, prio.ID); err != nil {
+		t.Fatal(err)
+	}
+	err = db.WithTx(ctx, tx, func(q *db.Queries) error {
+		_, err := q.DeleteTopic(ctx, topics[0].ID)
+		return err
+	})
+	if !db.IsForeignKeyViolation(err) {
+		t.Fatalf("expected a foreign key violation, got %v", err)
+	}
+}

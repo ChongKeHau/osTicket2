@@ -135,6 +135,9 @@ func (s *service) Update(ctx context.Context, id int64, in UpdateInput) (*Staff,
 		if err := checkDepts(ctx, q, in.PrimaryDeptID, extra); err != nil {
 			return err
 		}
+		if err := guardLastActiveAdmin(ctx, q, id, in); err != nil {
+			return err
+		}
 		r, err := q.UpdateStaff(ctx, db.UpdateStaffParams{
 			ID: id, Email: in.Email, FirstName: in.FirstName, LastName: in.LastName,
 			IsAdmin: in.IsAdmin, IsActive: in.IsActive, PrimaryDeptID: in.PrimaryDeptID,
@@ -203,6 +206,35 @@ func build(ctx context.Context, q *db.Queries, r db.Staff) (Staff, error) {
 		IsAdmin: r.IsAdmin, IsActive: r.IsActive, PrimaryDeptID: r.PrimaryDeptID, DepartmentIDs: ids,
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
 	}, nil
+}
+
+// guardLastActiveAdmin refuses a patch that would deactivate or demote the
+// sole remaining active admin. Staff rows aren't locked here (unlike
+// ticket's LockTicket pattern), so there's a small race if two such patches
+// land concurrently; acceptable for an operation this rare.
+func guardLastActiveAdmin(ctx context.Context, q *db.Queries, id int64, in UpdateInput) error {
+	removesAdmin := (in.IsActive != nil && !*in.IsActive) || (in.IsAdmin != nil && !*in.IsAdmin)
+	if !removesAdmin {
+		return nil
+	}
+	target, err := q.GetStaff(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("staff %d: %w", id, apperr.ErrNotFound)
+	}
+	if err != nil {
+		return err
+	}
+	if !target.IsAdmin || !target.IsActive {
+		return nil
+	}
+	count, err := q.CountActiveAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if count == 1 {
+		return fmt.Errorf("%w: cannot remove the last active admin", apperr.ErrConflict)
+	}
+	return nil
 }
 
 func checkDepts(ctx context.Context, q *db.Queries, primary *int64, extra []int64) error {

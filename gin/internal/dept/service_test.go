@@ -62,3 +62,26 @@ func TestDepartmentCRUD(t *testing.T) {
 		t.Fatalf("delete twice: %v", err)
 	}
 }
+
+// TestDeleteDepartmentForeignKeyViolation proves db.IsForeignKeyViolation
+// recognizes the real FK error DeleteDepartment raises when a department is
+// still referenced. This is the belt-and-braces mapping the service falls
+// back on beside its own CountDepartmentReferences guard: the query is
+// called directly (bypassing that guard) against the seeded "Support"
+// department, which the seeded help_topic row already references.
+func TestDeleteDepartmentForeignKeyViolation(t *testing.T) {
+	ctx := context.Background()
+	tx := testutil.Tx(t)
+	q := db.New(tx)
+	support, err := q.FirstDepartment(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.WithTx(ctx, tx, func(q *db.Queries) error {
+		_, err := q.DeleteDepartment(ctx, support.ID)
+		return err
+	})
+	if !db.IsForeignKeyViolation(err) {
+		t.Fatalf("expected a foreign key violation, got %v", err)
+	}
+}

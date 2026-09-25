@@ -99,3 +99,42 @@ func TestStaffLifecycle(t *testing.T) {
 		t.Fatalf("login with reset password: %v", err)
 	}
 }
+
+// TestLastActiveAdminCannotBeRemoved proves that deactivating or demoting
+// the sole remaining active admin is refused, but the same change succeeds
+// once a second active admin exists.
+func TestLastActiveAdminCannotBeRemoved(t *testing.T) {
+	ctx := context.Background()
+	tx := testutil.Tx(t)
+	q := db.New(tx)
+	svc := NewService(tx)
+	dept, _ := q.FirstDepartment(ctx)
+
+	admin, err := svc.Create(ctx, CreateInput{
+		Username: "root", Email: "root@x.test", Password: "password1", IsAdmin: true, PrimaryDeptID: dept.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inactive := false
+	if _, err := svc.Update(ctx, admin.ID, UpdateInput{IsActive: &inactive}); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("deactivating the last active admin: %v", err)
+	}
+	notAdmin := false
+	if _, err := svc.Update(ctx, admin.ID, UpdateInput{IsAdmin: &notAdmin}); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("demoting the last active admin: %v", err)
+	}
+	got, err := svc.Get(ctx, admin.ID)
+	if err != nil || !got.IsAdmin || !got.IsActive {
+		t.Fatalf("refused changes must not partially apply: %+v %v", got, err)
+	}
+
+	if _, err := svc.Create(ctx, CreateInput{
+		Username: "root2", Email: "root2@x.test", Password: "password1", IsAdmin: true, PrimaryDeptID: dept.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Update(ctx, admin.ID, UpdateInput{IsAdmin: &notAdmin}); err != nil {
+		t.Fatalf("demoting with another active admin present: %v", err)
+	}
+}

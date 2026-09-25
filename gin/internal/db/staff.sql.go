@@ -23,6 +23,17 @@ func (q *Queries) AddStaffDepartment(ctx context.Context, arg AddStaffDepartment
 	return err
 }
 
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT count(*)::bigint FROM staff WHERE is_admin AND is_active
+`
+
+func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createStaff = `-- name: CreateStaff :one
 INSERT INTO staff (username, email, password_hash, first_name, last_name, is_admin, is_active, primary_dept_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

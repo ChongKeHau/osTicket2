@@ -36,6 +36,9 @@ UPDATE staff SET password_hash = $2, updated_at = now() WHERE id = $1;
 -- name: DeleteStaffDepartments :exec
 DELETE FROM staff_department WHERE staff_id = $1;
 
+-- name: CountActiveAdmins :one
+SELECT count(*)::bigint FROM staff WHERE is_admin AND is_active;
+
 -- name: StaffCanSeeDept :one
 SELECT EXISTS (
   SELECT 1 FROM staff s
