@@ -20,6 +20,37 @@ func TestSanitizeHTML(t *testing.T) {
 	}
 }
 
+func TestSanitizeHTMLURLSchemes(t *testing.T) {
+	in := `<a href="&#106;avascript:alert(1)">a</a>` +
+		`<a href="jav&#x09;ascript:alert(1)">b</a>` +
+		"<a href=\"jav\tascript:alert(1)\">c</a>" +
+		`<img src="data:text/html;base64,AAAA">` +
+		`<a href="vbscript:x">d</a>` +
+		`<a href="https://ok">e</a>` +
+		`<a href="/relative">f</a>` +
+		`<a href="#top">g</a>` +
+		`<a href="mailto:a@b.test">h</a>` +
+		`<img src="cid:image1">`
+	out := SanitizeHTML(in)
+	for _, bad := range []string{"javascript:", "vbscript:", "data:text/html"} {
+		if strings.Contains(strings.ToLower(out), strings.ToLower(bad)) {
+			t.Fatalf("output still contains %q: %s", bad, out)
+		}
+	}
+	for _, good := range []string{
+		`href="https://ok"`, `href="/relative"`, `href="#top"`,
+		`href="mailto:a@b.test"`, `src="cid:image1"`,
+	} {
+		if !strings.Contains(out, good) {
+			t.Fatalf("output lost %q: %s", good, out)
+		}
+	}
+	// Every dangerous variant must have been rewritten to href/src="#".
+	if strings.Count(out, `="#"`) != 5 {
+		t.Fatalf("expected 5 rewritten attributes, got: %s", out)
+	}
+}
+
 func TestHTMLToText(t *testing.T) {
 	in := "<p>Hello &amp; welcome</p><div>Line<br>break</div><ul><li>one</li><li>two</li></ul><script>x</script>"
 	got := HTMLToText(in)
