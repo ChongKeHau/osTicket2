@@ -35,3 +35,10 @@ func TestStorageKeyAndDiscard(t *testing.T) {
 		t.Fatal("discard storage cannot open")
 	}
 }
+
+func TestOpenSourceFileInvalidKey(t *testing.T) {
+	rc, reason, err := openSourceFile(context.Background(), nil, SrcFile{Backend: "F", Key: "../etc/passwd"}, t.TempDir())
+	if err != nil || reason != "invalid file key" || rc != nil {
+		t.Fatalf("rc=%v reason=%q err=%v", rc, reason, err)
+	}
+}

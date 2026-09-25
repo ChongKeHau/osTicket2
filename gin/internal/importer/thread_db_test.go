@@ -138,3 +138,67 @@ func TestImportFilesWithoutFilesDir(t *testing.T) {
 		t.Fatalf("files = %+v", rep.Counter(EntityFiles))
 	}
 }
+
+// TestImportFilesSharedAcrossEntries checks that a source file attached to two
+// different entries gets a second file row and a second copy of the bytes,
+// since attachment has a UNIQUE index on file_id (one file row per attachment).
+func TestImportFilesSharedAcrossEntries(t *testing.T) {
+	sink, src, lk, rep := setupThroughTickets(t)
+	ctx := context.Background()
+	if err := sink.Step(ctx, func(w *Writer) error { return importEntries(ctx, src, w, lk, rep) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := src.db.ExecContext(ctx, "INSERT INTO ost_attachment (id, object_id, type, file_id, inline) VALUES (8, 8, 'H', 1, 0)"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := src.db.ExecContext(context.Background(), "DELETE FROM ost_attachment WHERE id = 8"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	filesDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(filesDir, "fskey2"), []byte("PNG!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := attachment.NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Step(ctx, func(w *Writer) error { return importFiles(ctx, src, w, lk, rep, store, filesDir) }); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := sink.db.QueryRow(ctx, "SELECT count(*) FROM attachment").Scan(&n); err != nil || n != 3 {
+		t.Fatalf("attachment rows = %d, %v", n, err)
+	}
+	if err := sink.db.QueryRow(ctx, "SELECT count(*) FROM file").Scan(&n); err != nil || n != 3 {
+		t.Fatalf("file rows = %d, %v", n, err)
+	}
+	var fileID int64
+	if err := sink.db.QueryRow(ctx, "SELECT file_id FROM attachment WHERE thread_entry_id = $1", lk.Entries[8]).Scan(&fileID); err != nil {
+		t.Fatal(err)
+	}
+	if fileID == lk.Files[1] {
+		t.Fatalf("expected entry 8's copy to have a fresh file id, got file 1's id %d", fileID)
+	}
+	var key, name, sum string
+	if err := sink.db.QueryRow(ctx, "SELECT key, name, sha256 FROM file WHERE id = $1", fileID).Scan(&key, &name, &sum); err != nil {
+		t.Fatal(err)
+	}
+	var origKey, origName, origSum string
+	if err := sink.db.QueryRow(ctx, "SELECT key, name, sha256 FROM file WHERE id = $1", lk.Files[1]).Scan(&origKey, &origName, &origSum); err != nil {
+		t.Fatal(err)
+	}
+	if key == origKey {
+		t.Fatalf("expected a fresh storage key, got file 1's key %q again", key)
+	}
+	if name != "notes.txt" || name != origName {
+		t.Fatalf("name = %q, want %q (matching file 1)", name, origName)
+	}
+	if sum != origSum {
+		t.Fatalf("sha256 = %q, want %q (matching file 1's bytes)", sum, origSum)
+	}
+	if rep.Counter(EntityFiles).Written != 3 {
+		t.Fatalf("files written = %d, want 3", rep.Counter(EntityFiles).Written)
+	}
+}

@@ -52,6 +52,9 @@ func openSourceFile(ctx context.Context, src *Source, f SrcFile, filesDir string
 		rc, err := src.OpenChunks(ctx, f.ID)
 		return rc, "", err
 	case "F":
+		if f.Key == "" || filepath.Base(f.Key) != f.Key || strings.ContainsAny(f.Key, "/\\") {
+			return nil, "invalid file key", nil
+		}
 		if filesDir == "" {
 			return nil, ReasonFilesDirMissing, nil
 		}
@@ -67,8 +70,11 @@ func openSourceFile(ctx context.Context, src *Source, f SrcFile, filesDir string
 }
 
 func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *Report, store attachment.Storage, filesDir string) error {
-	type pair struct{ entry, file int64 }
-	seen := map[pair]bool{}
+	// claimed tracks, for each source file id that has been copied at least once,
+	// the target entry id of the entry that first claimed it. attachment has a
+	// UNIQUE index on file_id, so a source file attached to a second, different
+	// entry needs its own file row and its own copy of the bytes.
+	claimed := map[int64]int64{}
 	// Files that could not be copied, so later attachments of the same file skip with the same reason.
 	failed := map[int64]string{}
 	entryStaff := map[int64]*int64{}
@@ -88,6 +94,48 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 	rows.Close()
 
 	now := time.Now()
+
+	// copyFile reads the source file's bytes, stores them under a fresh key, and
+	// inserts a new file row for them, returning its target id. It is used both
+	// for a source file's first copy and for any later copy a different claiming
+	// entry needs.
+	copyFile := func(ctx context.Context, src *Source, w *Writer, rep *Report, store attachment.Storage, filesDir string, a SrcAttachment, uploadedBy *int64) (int64, string, error) {
+		rc, reason, err := openSourceFile(ctx, src, a.File, filesDir)
+		if err != nil {
+			return 0, "", err
+		}
+		if reason != "" {
+			return 0, reason, nil
+		}
+		key, err := newStorageKey()
+		if err != nil {
+			rc.Close()
+			return 0, "", err
+		}
+		size, sum, err := store.Put(ctx, key, rc)
+		rc.Close()
+		if err != nil {
+			return 0, "", fmt.Errorf("store file %d: %w", a.FileID, err)
+		}
+		if size != a.File.Size {
+			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("size %d differs from source %d", size, a.File.Size))
+		}
+		name := strings.TrimSpace(a.File.Name)
+		if name == "" {
+			name = key
+		}
+		mime := a.File.Type
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		id := lk.allocID("file", a.FileID)
+		if err := w.Insert(ctx, "file", []string{"id", "key", "name", "mime", "size", "sha256", "backend", "uploaded_by", "created_at"},
+			[][]any{{id, key, name, mime, size, sum, "local", uploadedBy, orZero(a.File.Created, now)}}); err != nil {
+			return 0, "", err
+		}
+		return id, "", nil
+	}
+
 	var attachments [][]any
 	err = src.Attachments(ctx, func(a SrcAttachment) error {
 		rep.Read(EntityAttachments)
@@ -100,9 +148,14 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 			rep.Skip(EntityAttachments, a.FileID, reason)
 			return nil
 		}
-		if _, ok := lk.Files[a.FileID]; !ok {
+
+		var targetFileID int64
+		firstEntry, imported := claimed[a.FileID]
+		switch {
+		case !imported:
+			// First time this source file is attached to any imported entry.
 			rep.Read(EntityFiles)
-			rc, reason, err := openSourceFile(ctx, src, a.File, filesDir)
+			id, reason, err := copyFile(ctx, src, w, rep, store, filesDir, a, entryStaff[entryID])
 			if err != nil {
 				return err
 			}
@@ -112,42 +165,32 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 				rep.Skip(EntityAttachments, a.FileID, reason)
 				return nil
 			}
-			key, err := newStorageKey()
-			if err != nil {
-				rc.Close()
-				return err
-			}
-			size, sum, err := store.Put(ctx, key, rc)
-			rc.Close()
-			if err != nil {
-				return fmt.Errorf("store file %d: %w", a.FileID, err)
-			}
-			if size != a.File.Size {
-				rep.Note(EntityFiles, a.FileID, fmt.Sprintf("size %d differs from source %d", size, a.File.Size))
-			}
-			name := strings.TrimSpace(a.File.Name)
-			if name == "" {
-				name = key
-			}
-			mime := a.File.Type
-			if mime == "" {
-				mime = "application/octet-stream"
-			}
-			id := lk.allocID("file", a.FileID)
 			lk.Files[a.FileID] = id
-			if err := w.Insert(ctx, "file", []string{"id", "key", "name", "mime", "size", "sha256", "backend", "uploaded_by", "created_at"},
-				[][]any{{id, key, name, mime, size, sum, "local", entryStaff[entryID], orZero(a.File.Created, now)}}); err != nil {
-				return err
-			}
+			claimed[a.FileID] = entryID
 			rep.Written(EntityFiles)
-		}
-		p := pair{entryID, lk.Files[a.FileID]}
-		if seen[p] {
+			targetFileID = id
+		case firstEntry == entryID:
+			// Same file, same entry again: attachment's PK is (thread_entry_id, file_id).
 			rep.Note(EntityAttachments, a.FileID, fmt.Sprintf("duplicate attachment on entry %d", a.EntryID))
 			return nil
+		default:
+			// Same source file, a different entry: attachment.file_id is UNIQUE, so this
+			// entry needs its own copy of the file.
+			rep.Read(EntityFiles)
+			id, reason, err := copyFile(ctx, src, w, rep, store, filesDir, a, entryStaff[entryID])
+			if err != nil {
+				return err
+			}
+			if reason != "" {
+				rep.Skip(EntityAttachments, a.FileID, reason)
+				return nil
+			}
+			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("copied again for entry %d", a.EntryID))
+			rep.Written(EntityFiles)
+			targetFileID = id
 		}
-		seen[p] = true
-		attachments = append(attachments, []any{entryID, lk.Files[a.FileID], a.Inline})
+
+		attachments = append(attachments, []any{entryID, targetFileID, a.Inline})
 		rep.Written(EntityAttachments)
 		return nil
 	})
