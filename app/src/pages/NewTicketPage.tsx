@@ -1,20 +1,36 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import { listDepartments, listPriorities, listTopics } from '../api/reference'
 import { createTicket } from '../api/tickets'
 import type { CreateTicketInput } from '../api/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FileUpload, type PendingFile } from '../components/FileUpload'
 import { LoadingScreen } from '../components/LoadingScreen'
-import { useReferenceData } from '../hooks/useReferenceData'
 
 const SOURCES = ['web', 'phone', 'api', 'other'] as const
 
 export function NewTicketPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { topics, departments, priorities, isLoading, error: refError } = useReferenceData()
+  // This page only consumes topics/departments/priorities, so it queries just those three
+  // (not the full useReferenceData bundle, which also fetches statuses/staff) — a failure on an
+  // endpoint this page never uses (e.g. /staff, /statuses) must not block the form. Same query
+  // keys and staleTime as useReferenceData so the cache stays shared with other pages.
+  const [topicsQ, departmentsQ, prioritiesQ] = useQueries({
+    queries: [
+      { queryKey: ['ref', 'topics'], queryFn: listTopics, staleTime: 5 * 60_000 },
+      { queryKey: ['ref', 'departments'], queryFn: listDepartments, staleTime: 5 * 60_000 },
+      { queryKey: ['ref', 'priorities'], queryFn: listPriorities, staleTime: 5 * 60_000 },
+    ],
+  })
+  const refQueries = [topicsQ, departmentsQ, prioritiesQ]
+  const topics = topicsQ.data ?? []
+  const departments = departmentsQ.data ?? []
+  const priorities = prioritiesQ.data ?? []
+  const isLoading = refQueries.some((q) => q.isLoading)
+  const refError = refQueries.find((q) => q.error)?.error ?? null
   const [form, setForm] = useState({ subject: '', message: '', requester_name: '', requester_email: '', topic_id: 0, dept_id: 0, priority_id: 0, source: 'web', due_at: '' })
   const [pending, setPending] = useState<PendingFile[]>([])
   const uploading = pending.some((p) => p.status === 'uploading')
@@ -51,7 +67,7 @@ export function NewTicketPage() {
   )
 
   if (isLoading) return <LoadingScreen />
-  if (refError) return <ErrorBanner error={refError} />
+  if (refError) return <ErrorBanner error={refError} onRetry={() => { void Promise.all(refQueries.map((q) => q.refetch())) }} />
 
   return (
     <div className="panel" style={{ maxWidth: 640 }}>

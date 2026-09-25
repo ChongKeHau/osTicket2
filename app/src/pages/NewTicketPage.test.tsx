@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
 import { REFRESH_KEY } from '../api/client'
-import { ticketFixture } from '../test/fixtures'
+import { referenceFixtures, ticketFixture } from '../test/fixtures'
 import { renderWithProviders } from '../test/render'
 import { server } from '../test/setup'
 
@@ -40,4 +40,19 @@ test('validation errors map to fields', async () => {
   await userEvent.click(screen.getByRole('button', { name: /create ticket/i }))
   expect(await screen.findByText(/required when no topic/i)).toBeInTheDocument()
   expect(screen.getByText('email')).toBeInTheDocument()
+})
+
+test('a /staff failure (data this page never uses) does not block the form', async () => {
+  server.use(http.get('/api/v1/staff', () => HttpResponse.json({ error: { code: 'server_error', message: 'boom' } }, { status: 500 })))
+  renderWithProviders(<App />, { route: '/tickets/new' })
+  expect(await screen.findByLabelText(/^topic$/i)).toBeInTheDocument()
+})
+
+test('a /topics failure shows a retryable banner; retry recovers the form', async () => {
+  server.use(http.get('/api/v1/topics', () => HttpResponse.json({ error: { code: 'server_error', message: 'boom' } }, { status: 500 })))
+  renderWithProviders(<App />, { route: '/tickets/new' })
+  const retry = await screen.findByRole('button', { name: /retry/i })
+  server.use(http.get('/api/v1/topics', () => HttpResponse.json({ items: referenceFixtures.topics })))
+  await userEvent.click(retry)
+  expect(await screen.findByLabelText(/^topic$/i)).toBeInTheDocument()
 })
