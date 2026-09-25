@@ -9,7 +9,14 @@ export function FileUpload({ pending, onChange, inputId }: { pending: PendingFil
   useEffect(() => { ref.current = pending }, [pending])
 
   function update(key: string, patch: Partial<PendingFile>) {
+    if (!ref.current.some((p) => p.key === key)) return
     const next = ref.current.map((p) => (p.key === key ? { ...p, ...patch } : p))
+    ref.current = next
+    onChange(next)
+  }
+
+  function remove(key: string) {
+    const next = ref.current.filter((p) => p.key !== key)
     ref.current = next
     onChange(next)
   }
@@ -43,7 +50,7 @@ export function FileUpload({ pending, onChange, inputId }: { pending: PendingFil
               {p.name}{' '}
               {p.status === 'uploading' && <span className="muted">uploading…</span>}
               {p.status === 'error' && <span className="field-error">{p.error}</span>}
-              <button type="button" aria-label={`Remove ${p.name}`} onClick={() => onChange(ref.current.filter((x) => x.key !== p.key))} style={{ marginLeft: 8 }}>×</button>
+              <button type="button" aria-label={`Remove ${p.name}`} onClick={() => remove(p.key)} style={{ marginLeft: 8 }}>×</button>
             </li>
           ))}
         </ul>

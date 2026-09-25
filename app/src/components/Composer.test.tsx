@@ -71,3 +71,21 @@ test('failed upload shows the error and does not block other files', async () =>
   expect(await screen.findByText(/not allowed/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /send reply/i })).toBeEnabled()
 })
+
+test('removing a file mid-upload keeps it out of file_ids', async () => {
+  let replyBody: unknown
+  server.use(
+    http.post('/api/v1/files', async () => { await delay(300); return HttpResponse.json({ id: 42, name: 'a.txt', mime: 'text/plain', size: 3 }, { status: 201 }) }),
+    http.post('/api/v1/tickets/7/reply', async ({ request }) => { replyBody = await request.json(); return HttpResponse.json({ id: 9 }, { status: 201 }) }),
+  )
+  renderWithProviders(<Composer ticketId={7} />)
+  await userEvent.type(screen.getByLabelText(/^reply$/i), 'see attached')
+  await userEvent.upload(screen.getByLabelText(/attach files/i), new File(['abc'], 'a.txt', { type: 'text/plain' }))
+  await userEvent.click(screen.getByRole('button', { name: /remove a\.txt/i }))
+  expect(screen.queryByText(/a\.txt/)).not.toBeInTheDocument()
+  await new Promise((r) => setTimeout(r, 400))
+  expect(screen.queryByText(/a\.txt/)).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: /send reply/i })).toBeEnabled())
+  await userEvent.click(screen.getByRole('button', { name: /send reply/i }))
+  await waitFor(() => expect(replyBody).toMatchObject({ file_ids: [] }))
+})
