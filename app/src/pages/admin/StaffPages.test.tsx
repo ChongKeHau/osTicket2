@@ -97,6 +97,14 @@ test('create validation errors render under fields', async () => {
   expect(screen.getByText('required')).toBeInTheDocument()
 })
 
+test('an is_active error on create goes to the banner, since create does not render that field', async () => {
+  server.use(http.post('/api/v1/staff', () =>
+    HttpResponse.json({ error: { code: 'validation_failed', message: 'request validation failed', fields: { is_active: 'bad' } } }, { status: 400 })))
+  renderWithProviders(<App />, { route: '/admin/staff/new' })
+  await userEvent.click(await screen.findByRole('button', { name: /^create$/i }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('request validation failed')
+})
+
 test('unknown id renders not found', async () => {
   renderWithProviders(<App />, { route: '/admin/staff/999' })
   expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument()

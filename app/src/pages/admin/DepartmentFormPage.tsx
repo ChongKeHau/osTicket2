@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Department, DepartmentInput, Staff } from '../../api/types'
@@ -5,6 +6,7 @@ import { ErrorBanner } from '../../components/ErrorBanner'
 import { CheckboxField, FormField } from '../../components/FormField'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import { useDepartmentMutations } from '../../hooks/useAdminMutations'
+import { useLastSeen } from '../../hooks/useLastSeen'
 import { useReferenceData } from '../../hooks/useReferenceData'
 import { staffName } from '../../lib/format'
 import { changedFields, parseId, splitErrors } from '../../lib/forms'
@@ -16,16 +18,14 @@ const LIST = '/admin/departments'
 const toInput = (d: Department): DepartmentInput => ({ name: d.name, is_public: d.is_public, manager_id: d.manager_id })
 
 export function DepartmentFormPage() {
+  const qc = useQueryClient()
   const { id } = useParams()
   const { departments, staff, isLoading, error } = useReferenceData()
+  const n = id === undefined ? null : parseId(id)
+  const record = useLastSeen(n === null ? undefined : departments.find((d) => d.id === n), n)
   if (isLoading) return <LoadingScreen />
-  if (error) return <ErrorBanner error={error} />
-  let record: Department | undefined
-  if (id !== undefined) {
-    const n = parseId(id)
-    record = n === null ? undefined : departments.find((d) => d.id === n)
-    if (!record) return <NotFoundPage />
-  }
+  if (error) return <ErrorBanner error={error} onRetry={() => void qc.refetchQueries({ queryKey: ['ref'] })} />
+  if (id !== undefined && !record) return <NotFoundPage />
   // key remounts the form (and reseeds its state) when navigating between records.
   return <DepartmentForm key={record?.id ?? 'new'} record={record} staff={staff} />
 }

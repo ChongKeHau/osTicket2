@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Department, Staff, UpdateStaffInput } from '../../api/types'
@@ -5,6 +6,7 @@ import { ErrorBanner } from '../../components/ErrorBanner'
 import { CheckboxField, FormField } from '../../components/FormField'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import { useStaffMutations } from '../../hooks/useAdminMutations'
+import { useLastSeen } from '../../hooks/useLastSeen'
 import { useReferenceData } from '../../hooks/useReferenceData'
 import { staffName } from '../../lib/format'
 import { changedFields, parseId, splitErrors } from '../../lib/forms'
@@ -13,7 +15,8 @@ import styles from './admin.module.css'
 
 const LIST = '/admin/staff'
 const EDIT_KNOWN = ['email', 'first_name', 'last_name', 'is_admin', 'is_active', 'primary_dept_id', 'department_ids']
-const CREATE_KNOWN = ['username', 'password', ...EDIT_KNOWN]
+// Create does not render is_active, so an error on it must reach the banner.
+const CREATE_KNOWN = ['username', 'password', 'email', 'first_name', 'last_name', 'is_admin', 'primary_dept_id', 'department_ids']
 
 /** Editable values; primary_dept_id 0 means "not chosen yet" and is sent as 0 so the API reports it. */
 interface Form {
@@ -36,16 +39,14 @@ const toUpdate = (f: Form): Required<UpdateStaffInput> => ({
 })
 
 export function StaffFormPage() {
+  const qc = useQueryClient()
   const { id } = useParams()
   const { staff, departments, isLoading, error } = useReferenceData()
+  const n = id === undefined ? null : parseId(id)
+  const record = useLastSeen(n === null ? undefined : staff.find((s) => s.id === n), n)
   if (isLoading) return <LoadingScreen />
-  if (error) return <ErrorBanner error={error} />
-  let record: Staff | undefined
-  if (id !== undefined) {
-    const n = parseId(id)
-    record = n === null ? undefined : staff.find((s) => s.id === n)
-    if (!record) return <NotFoundPage />
-  }
+  if (error) return <ErrorBanner error={error} onRetry={() => void qc.refetchQueries({ queryKey: ['ref'] })} />
+  if (id !== undefined && !record) return <NotFoundPage />
   return <StaffForm key={record?.id ?? 'new'} record={record} departments={departments} />
 }
 

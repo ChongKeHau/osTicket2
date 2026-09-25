@@ -77,6 +77,31 @@ test('a conflict shows in the banner and keeps the form', async () => {
   expect(screen.getByLabelText(/^name$/i)).toHaveValue('Support')
 })
 
+test('a 404 on save shows the banner and keeps the edits although the record left the list', async () => {
+  server.use(http.patch('/api/v1/departments/3', () => {
+    server.use(http.get('/api/v1/departments', () => HttpResponse.json({ items: adminFixtures.departments.filter((d) => d.id !== 3) })))
+    return HttpResponse.json({ error: { code: 'not_found', message: 'department not found' } }, { status: 404 })
+  }))
+  renderWithProviders(<App />, { route: '/admin/departments/3' })
+  await userEvent.clear(await screen.findByLabelText(/^name$/i))
+  await userEvent.type(screen.getByLabelText(/^name$/i), 'Sales EMEA')
+  await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('department not found')
+  // Let the post-mutation refetch land, then check the form survived it.
+  await waitFor(() => expect(screen.queryByRole('heading', { name: /page not found/i })).not.toBeInTheDocument())
+  expect(screen.getByRole('alert')).toHaveTextContent('department not found')
+  expect(screen.getByLabelText(/^name$/i)).toHaveValue('Sales EMEA')
+})
+
+test('a reference-data failure offers Retry, which loads the form', async () => {
+  server.use(http.get('/api/v1/departments', () => HttpResponse.json({ error: { code: 'internal', message: 'internal server error' } }, { status: 500 })))
+  renderWithProviders(<App />, { route: '/admin/departments/new' })
+  const retry = await screen.findByRole('button', { name: /retry/i })
+  server.use(http.get('/api/v1/departments', () => HttpResponse.json({ items: adminFixtures.departments })))
+  await userEvent.click(retry)
+  expect(await screen.findByRole('heading', { name: 'New department' })).toBeInTheDocument()
+})
+
 test('unknown or invalid id renders not found', async () => {
   renderWithProviders(<App />, { route: '/admin/departments/999' })
   expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument()

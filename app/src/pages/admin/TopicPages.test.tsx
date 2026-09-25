@@ -54,6 +54,27 @@ test('create submits all fields and returns to the list', async () => {
   expect(await screen.findByRole('heading', { name: 'Topics' })).toBeInTheDocument()
 })
 
+test('a negative sort order is sent as typed', async () => {
+  let body: unknown
+  server.use(http.post('/api/v1/topics', async ({ request }) => { body = await request.json(); return HttpResponse.json({ id: 9, ...(body as object) }, { status: 201 }) }))
+  renderWithProviders(<App />, { route: '/admin/topics/new' })
+  await userEvent.type(await screen.findByLabelText(/^name$/i), 'Outages')
+  await userEvent.clear(screen.getByLabelText(/sort order/i))
+  await userEvent.type(screen.getByLabelText(/sort order/i), '-5')
+  await userEvent.click(screen.getByRole('button', { name: /^create$/i }))
+  await waitFor(() => expect(body).toMatchObject({ sort_order: -5 }))
+})
+
+test('an empty sort order is sent as 0', async () => {
+  let body: unknown
+  server.use(http.patch('/api/v1/topics/2', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...referenceFixtures.topics[1], ...(body as object) }) }))
+  renderWithProviders(<App />, { route: '/admin/topics/2' })
+  await userEvent.clear(await screen.findByLabelText(/sort order/i))
+  expect(screen.getByLabelText(/sort order/i)).toHaveValue(null)
+  await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+  await waitFor(() => expect(body).toEqual({ sort_order: 0 }))
+})
+
 test('edit seeds the form and sends only changed fields', async () => {
   let body: unknown
   server.use(http.patch('/api/v1/topics/2', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...referenceFixtures.topics[1], ...(body as object) }) }))
