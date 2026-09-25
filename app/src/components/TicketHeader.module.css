@@ -1,0 +1,5 @@
+.title { margin: 0 0 12px; font-size: 20px; }
+.grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0 0 12px; }
+.grid dt { color: var(--muted); }
+.grid dd { margin: 0; }
+.editForm { margin-top: 12px; max-width: 480px; }

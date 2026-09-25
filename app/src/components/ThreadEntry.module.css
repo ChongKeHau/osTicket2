@@ -1,0 +1,5 @@
+.entry { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; background: var(--panel); }
+.note { background: #fffbe6; }
+.response { border-left: 3px solid var(--accent); }
+.head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+.badge { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
