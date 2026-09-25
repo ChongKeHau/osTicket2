@@ -88,3 +88,18 @@ func TestLookupAllocID(t *testing.T) {
 		t.Fatalf("second collision: %d", got)
 	}
 }
+
+func TestAllocIDNotedReportsRemaps(t *testing.T) {
+	lk, rep := NewLookup(), NewReport()
+	lk.markTaken("department", 1)
+	if got := allocIDNoted(lk, rep, EntityDepartments, "department", 4); got != 4 {
+		t.Fatalf("free id kept: %d", got)
+	}
+	if got := allocIDNoted(lk, rep, EntityDepartments, "department", 1); got != 5 {
+		t.Fatalf("collision: %d", got)
+	}
+	s := rep.Counter(EntityDepartments).Samples
+	if len(s) != 1 || s[0].ID != 1 || s[0].Reason != "id remapped to 5" {
+		t.Fatalf("samples = %+v, want one remap note for source id 1", s)
+	}
+}

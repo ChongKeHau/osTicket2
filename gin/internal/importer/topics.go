@@ -37,7 +37,7 @@ func importTopics(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *
 		if p, ok := lk.Priorities[tp.PriorityID]; ok {
 			prio = &p
 		}
-		id := lk.allocID("help_topic", tp.ID)
+		id := allocIDNoted(lk, rep, EntityTopics, "help_topic", tp.ID)
 		lk.Topics[tp.ID] = id
 		created := orZero(tp.Created, now)
 		batch = append(batch, []any{id, name, dept, prio, topicActive(tp.Flags), tp.Sort, created, orZero(tp.Updated, created)})

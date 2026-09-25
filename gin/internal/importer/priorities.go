@@ -28,7 +28,7 @@ func importPriorities(ctx context.Context, src *Source, w *Writer, lk *Lookup, r
 			rep.Merged(EntityPriorities)
 			continue
 		}
-		id := lk.allocID("ticket_priority", p.ID)
+		id := allocIDNoted(lk, rep, EntityPriorities, "ticket_priority", p.ID)
 		seed[key] = id
 		lk.Priorities[p.ID] = id
 		batch = append(batch, []any{id, name, p.Urgency, color})

@@ -66,7 +66,7 @@ func importEvents(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *
 		if s, ok := lk.Staff[e.StaffID]; ok {
 			staff = &s
 		}
-		id := lk.allocID("ticket_event", e.ID)
+		id := allocIDNoted(lk, rep, EntityEvents, "ticket_event", e.ID)
 		rep.Written(EntityEvents)
 		return batch.Add(ctx, []any{id, ticketID, staff, kind, payload, orZero(e.Timestamp, now)})
 	})

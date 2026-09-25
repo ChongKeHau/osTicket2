@@ -50,7 +50,7 @@ func importStatuses(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep
 			rep.Merged(EntityStatuses)
 			continue
 		}
-		id := lk.allocID("ticket_status", st.ID)
+		id := allocIDNoted(lk, rep, EntityStatuses, "ticket_status", st.ID)
 		seed[key] = id
 		lk.Statuses[st.ID] = id
 		batch = append(batch, []any{id, name, state, st.Sort})

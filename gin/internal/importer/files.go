@@ -175,7 +175,7 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 		if mime == "" {
 			mime = "application/octet-stream"
 		}
-		id := lk.allocID("file", a.FileID)
+		id := allocIDNoted(lk, rep, EntityFiles, "file", a.FileID)
 		if err := w.Insert(ctx, "file", []string{"id", "key", "name", "mime", "size", "sha256", "backend", "uploaded_by", "created_at"},
 			[][]any{{id, key, name, mime, size, sum, "local", uploadedBy, orZero(a.File.Created, now)}}); err != nil {
 			return 0, "", err

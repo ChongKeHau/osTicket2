@@ -64,7 +64,7 @@ func importEntries(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 		}
 		poster, body := tc.clean(e.Poster), tc.clean(e.Body)
 		tc.note(rep, EntityEntries, e.ID)
-		id := lk.allocID("thread_entry", e.ID)
+		id := allocIDNoted(lk, rep, EntityEntries, "thread_entry", e.ID)
 		lk.Entries[e.ID] = id
 		entryThread[id] = e.ThreadID
 		if e.PID != 0 {

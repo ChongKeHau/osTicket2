@@ -1,6 +1,9 @@
 package importer
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // IDMap maps a source (MySQL) id to the target (Postgres) id.
 type IDMap map[int64]int64
@@ -49,6 +52,16 @@ func (lk *Lookup) allocID(table string, srcID int64) int64 {
 		id++
 	}
 	taken[id] = true
+	return id
+}
+
+// allocIDNoted is allocID that also notes, under entity, a source id that had
+// to be renumbered because it collided with a seed or earlier row.
+func allocIDNoted(lk *Lookup, rep *Report, e Entity, table string, srcID int64) int64 {
+	id := lk.allocID(table, srcID)
+	if id != srcID {
+		rep.Note(e, srcID, fmt.Sprintf("id remapped to %d", id))
+	}
 	return id
 }
 

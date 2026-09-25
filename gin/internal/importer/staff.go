@@ -74,7 +74,7 @@ func importStaff(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 			dept = lk.DefaultDept
 			rep.Note(EntityStaff, st.ID, "primary department missing, using seed department")
 		}
-		id := lk.allocID("staff", st.ID)
+		id := allocIDNoted(lk, rep, EntityStaff, "staff", st.ID)
 		lk.Staff[st.ID] = id
 		primary[id] = dept
 		created := orZero(st.Created, now)

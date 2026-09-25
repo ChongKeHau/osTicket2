@@ -52,7 +52,7 @@ func importDepartmentsPass1(ctx context.Context, src *Source, w *Writer, lk *Loo
 		if name != trimmed {
 			rep.Note(EntityDepartments, d.ID, "renamed to "+name)
 		}
-		id := lk.allocID("department", d.ID)
+		id := allocIDNoted(lk, rep, EntityDepartments, "department", d.ID)
 		lk.Departments[d.ID] = id
 		if d.ManagerID != 0 {
 			lk.PendingManagers[id] = d.ManagerID

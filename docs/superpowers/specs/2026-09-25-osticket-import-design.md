@@ -31,9 +31,11 @@ API and React app without losing tickets, threads, attachments, staff, or config
   which.
 - osTicket staff passwords are PHP `password_hash` bcrypt strings (`$2y$…`), which Go's
   `golang.org/x/crypto/bcrypt` verifies unchanged.
-- The filesystem plugin stores each file at `<uploads dir>/<key>` (flat). If a file is not at
-  that path, `<uploads dir>/<first two chars of key>/<key>` is tried, then the attachment is
-  skipped and reported.
+- The filesystem plugin (`storage-fs`) nests files by a configurable depth, one key character
+  per level: `<uploads dir>/<key>` at depth 0, `<uploads dir>/<k0>/<key>` at depth 1,
+  `<uploads dir>/<k0>/<k1>/<key>` at depth 2, and so on. The importer tries depths 0 to 3,
+  then `<uploads dir>/<k0k1>/<key>`; if the file is at none of them the attachment is skipped
+  and reported.
 
 ### Success criteria
 

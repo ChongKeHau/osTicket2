@@ -65,6 +65,8 @@ func importOsticket(ctx context.Context, args []string) error {
 	if err != nil {
 		return &exitError{code: 1, err: err}
 	}
+	// stdout carries only the report, so it stays readable when piped; logs go to stderr.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
 		return &exitError{code: 1, err: errors.New("DATABASE_URL is required")}

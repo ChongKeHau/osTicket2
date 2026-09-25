@@ -194,7 +194,7 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 		if err != nil {
 			return err
 		}
-		id := lk.allocID("ticket", tk.ID)
+		id := allocIDNoted(lk, rep, EntityTickets, "ticket", tk.ID)
 		lk.Tickets[tk.ID] = id
 		created := orZero(tk.Created, now)
 		rep.Written(EntityTickets)
