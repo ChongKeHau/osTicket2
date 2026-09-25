@@ -14,6 +14,16 @@ If port 5173 is already in use, override it: `npm run dev -- --port <n>`.
 
 Sign in with an account created by `go run ./cmd/api create-admin` or `POST /staff`.
 
+## Admin
+
+Staff with `is_admin` see an **Admin** link in the header. It opens `/admin` with three
+sections: Departments, Topics, and Staff. Each has a list page and a per-record form
+(`/admin/<section>/new`, `/admin/<section>/<id>`). Departments and topics can be deleted from
+the list (inline confirm; the API refuses deletion while tickets, staff, or topics still
+reference them). Staff cannot be deleted; deactivate them instead. The staff edit page also
+has a "Set password" section. The API enforces admin rights and the last-active-admin rule;
+the UI shows those errors inline.
+
 ## Scripts
 
     npm test             # Vitest + Testing Library + MSW, headless
