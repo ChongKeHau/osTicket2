@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // fakeSource serves msgs in order; message i has UID i+1.
@@ -150,5 +151,42 @@ func TestPollerFailureCountResetsOnSuccess(t *testing.T) {
 	}
 	if len(p.failures) != 0 || len(p.poison) != 0 {
 		t.Fatalf("failures = %v poison = %v", p.failures, p.poison)
+	}
+}
+
+func TestPollerRetriesPoisonUIDAfterExpiry(t *testing.T) {
+	src := &fakeSource{msgs: [][]byte{[]byte("poison"), []byte("a")}, seen: []bool{false, false}}
+	proc := &stubProcessor{poison: []byte("poison"), calls: map[string]int{}}
+	p := NewPoller(src, proc)
+	clock := time.Unix(1_700_000_000, 0)
+	p.now = func() time.Time { return clock }
+
+	for i := 0; i < poisonAfter; i++ {
+		_, _ = p.RunOnce(context.Background())
+	}
+	if !p.poisoned(1) {
+		t.Fatal("uid 1 should be poison after three failing cycles")
+	}
+	src.seen[1] = false
+	if _, err := p.RunOnce(context.Background()); err != nil {
+		t.Fatalf("cycle while poisoned: %v", err)
+	}
+	if proc.calls["poison"] != poisonAfter {
+		t.Fatalf("poison processed %d times while skipped, want %d", proc.calls["poison"], poisonAfter)
+	}
+
+	// Once the retry window passes the message is offered again. It fails
+	// once more, which starts a fresh count rather than skipping it for good.
+	clock = clock.Add(poisonRetry + time.Second)
+	if p.poisoned(1) {
+		t.Fatal("uid 1 should be retried after the expiry")
+	}
+	src.seen[1] = false
+	_, err := p.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("expected the retried poison message to fail the cycle again")
+	}
+	if proc.calls["poison"] != poisonAfter+1 {
+		t.Fatalf("poison processed %d times after expiry, want %d", proc.calls["poison"], poisonAfter+1)
 	}
 }

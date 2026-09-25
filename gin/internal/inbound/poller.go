@@ -25,6 +25,11 @@ const maxPerCycle = 100
 // poisonAfter is how many consecutive failing cycles make a UID poison.
 const poisonAfter = 3
 
+// poisonRetry is how long a poison UID is skipped before it is offered to the
+// processor again. A database outage of a few minutes poisons every message at
+// the head of the mailbox; without an expiry they would wait for a restart.
+const poisonRetry = 30 * time.Minute
+
 // Poller feeds a Source into a Processor.
 type Poller struct {
 	src  Source
@@ -32,20 +37,21 @@ type Poller struct {
 	log  *slog.Logger
 
 	mu       sync.Mutex
-	failures map[uint32]int      // consecutive Process failures per UID
-	poison   map[uint32]struct{} // UIDs skipped for the rest of the process life
+	failures map[uint32]int       // consecutive Process failures per UID
+	poison   map[uint32]time.Time // UIDs skipped until the recorded time
+	now      func() time.Time
 }
 
 func NewPoller(src Source, proc MessageProcessor) *Poller {
-	return &Poller{src: src, proc: proc, log: slog.Default(), failures: map[uint32]int{}, poison: map[uint32]struct{}{}}
+	return &Poller{src: src, proc: proc, log: slog.Default(), failures: map[uint32]int{}, poison: map[uint32]time.Time{}, now: time.Now}
 }
 
 // RunOnce processes up to maxPerCycle unseen messages. Permanent problems are
 // recorded by the processor and the message is marked seen; a transient error
 // stops the cycle and leaves the message unseen. A UID whose processing fails
-// on poisonAfter consecutive cycles is logged at error level and skipped from
-// then on (left unseen, so a restart retries it), so it cannot block the
-// messages behind it.
+// on poisonAfter consecutive cycles is logged at error level and skipped for
+// poisonRetry (left unseen, so a restart or the expiry retries it), so it
+// cannot block the messages behind it.
 func (p *Poller) RunOnce(ctx context.Context) (int, error) {
 	n := 0
 	err := p.src.Cycle(ctx, maxPerCycle, func(uid uint32, raw []byte) (bool, error) {
@@ -58,7 +64,7 @@ func (p *Poller) RunOnce(ctx context.Context) (int, error) {
 				return false, err
 			}
 			if p.fail(uid) {
-				p.log.Error("inbound message keeps failing; skipping it until restart", "uid", uid, "failures", poisonAfter, "err", err)
+				p.log.Error("inbound message keeps failing; skipping it for a while", "uid", uid, "failures", poisonAfter, "retry_after", poisonRetry, "err", err)
 				return false, nil
 			}
 			return false, err
@@ -77,11 +83,20 @@ func (p *Poller) RunOnce(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// poisoned reports whether uid is still on the skip list; an expired entry is
+// dropped so the message gets another poisonAfter cycles.
 func (p *Poller) poisoned(uid uint32) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.poison[uid]
-	return ok
+	until, ok := p.poison[uid]
+	if !ok {
+		return false
+	}
+	if p.now().Before(until) {
+		return true
+	}
+	delete(p.poison, uid)
+	return false
 }
 
 // fail counts one more consecutive failure and reports whether uid is now poison.
@@ -93,7 +108,7 @@ func (p *Poller) fail(uid uint32) bool {
 		return false
 	}
 	delete(p.failures, uid)
-	p.poison[uid] = struct{}{}
+	p.poison[uid] = p.now().Add(poisonRetry)
 	return true
 }
 
