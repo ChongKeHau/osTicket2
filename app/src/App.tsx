@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage'
 import { NewTicketPage } from './pages/NewTicketPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminLayout } from './pages/admin/AdminLayout'
+import { DepartmentFormPage } from './pages/admin/DepartmentFormPage'
 import { DepartmentListPage } from './pages/admin/DepartmentListPage'
 import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
@@ -26,6 +27,8 @@ export default function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<Navigate to="/admin/departments" replace />} />
                 <Route path="departments" element={<DepartmentListPage />} />
+                <Route path="departments/new" element={<DepartmentFormPage />} />
+                <Route path="departments/:id" element={<DepartmentFormPage />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFoundPage />} />
