@@ -62,3 +62,32 @@ func TestImportTickets(t *testing.T) {
 		t.Fatalf("extra = %v, %v", extra, err)
 	}
 }
+
+// TestImportTicketsUnmappedPriorityFallsToTopic checks that a priority answer whose value_id
+// has no match in lk.Priorities falls back to the ticket's topic priority, not the seed default.
+func TestImportTicketsUnmappedPriorityFallsToTopic(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	src := openTestSource(t)
+	if _, err := src.db.ExecContext(ctx, "UPDATE ost_form_entry_values SET value_id = 999 WHERE entry_id = 101 AND field_id = 22"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := src.db.ExecContext(context.Background(), "UPDATE ost_form_entry_values SET value_id = 2 WHERE entry_id = 101 AND field_id = 22"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	sink := NewSink(tx, 2, false)
+	lk, rep := NewLookup(), NewReport()
+	runReferenceSteps(t, sink, src, lk, rep)
+	if err := sink.Step(ctx, func(w *Writer) error { return importTickets(ctx, src, w, lk, rep) }); err != nil {
+		t.Fatal(err)
+	}
+	var priority int64
+	if err := tx.QueryRow(ctx, "SELECT priority_id FROM ticket WHERE id = $1", lk.Tickets[2]).Scan(&priority); err != nil {
+		t.Fatal(err)
+	}
+	if priority != lk.Priorities[3] {
+		t.Fatalf("ticket 2 priority = %d, want topic Refunds' priority %d", priority, lk.Priorities[3])
+	}
+}

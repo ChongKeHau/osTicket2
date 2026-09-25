@@ -156,11 +156,14 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 			rep.Note(EntityTickets, tk.ID, "empty subject")
 		}
 		priority := lk.DefaultPriority
+		resolved := false
 		if a, ok := answers["priority"]; ok && a.ValueID != nil {
 			if p, ok := lk.Priorities[*a.ValueID]; ok {
 				priority = p
+				resolved = true
 			}
-		} else if topic != nil {
+		}
+		if !resolved && topic != nil {
 			if p, ok := topicPriority[*topic]; ok {
 				priority = p
 			}
