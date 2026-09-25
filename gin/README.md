@@ -18,6 +18,36 @@ Go 1.26+, Docker (Postgres and Flyway run as containers).
 `create-admin` also takes optional `--first-name`/`--last-name` (first name
 defaults to `--username`, last name defaults to empty, when left out).
 
+## Importing an existing osTicket database
+
+`import-osticket` copies an osTicket (1.18) MySQL database into a fresh API database:
+departments, staff (passwords carry over), help topics, priorities, statuses, tickets with
+their threads and attachments, and ticket history. Run it once, against a target that has
+only the seed rows (it refuses otherwise), with the API stopped:
+
+    DATABASE_URL=postgres://... STORAGE_DIR=./storage \
+      go run ./cmd/api import-osticket \
+        --mysql-dsn 'ost:secret@tcp(127.0.0.1:3306)/osticket' \
+        --prefix ost_ --timezone Asia/Kuala_Lumpur \
+        --files-dir /var/www/osticket/attachments   # only if the filesystem storage plugin was used
+
+Flags: `--prefix` (default `ost_`), `--timezone` (zone of the MySQL datetimes, default `UTC`),
+`--files-dir` (an existing directory; needed for files stored by the filesystem plugin at any
+nesting depth up to 3; database-stored files need nothing), `--batch` (rows per insert, default 500), `--dry-run` (validate and report only).
+
+Ids and ticket numbers are preserved unless a source id collides with a seed row, in which
+case the row is renumbered and the report says so. New tickets created by the API afterwards
+are numbered above the highest imported number. The report lists, per entity, rows read,
+written, merged into seed rows, and skipped with reasons; it is printed on stdout, and logs go
+to stderr. Text containing NUL bytes or invalid UTF-8 (which PostgreSQL rejects) is cleaned
+and noted in the report. Exit codes: 0 done; 1 aborted (earlier steps stay committed: drop
+and re-migrate the target before retrying; the importer removes the attachment files it wrote
+in the failed step, while files from earlier committed steps stay with their rows and go when
+you drop the target and empty `STORAGE_DIR`); 2 target not empty;
+3 done but some tickets or attachments were skipped for reasons other than a deleted
+status, listed in the report. Not imported: SLAs, teams, collaborators, custom form fields
+other than subject and priority, canned responses, knowledge base, email settings.
+
 `POST /auth/login` rate-limits by `username + client IP`: 10 attempts per 60s
 window, then `429 rate_limited` until the window rolls over; a successful
 login resets the counter.
