@@ -15,8 +15,10 @@ test('defaults when the URL is empty', () => {
 test('reads valid params and ignores junk', () => {
   const { result } = renderHook(() => useTicketFilters(), { wrapper: wrapper('/tickets?state=open&status=3&assigned_to=me&q=printer&sort=priority&page=2&page_size=50') })
   expect(result.current.filter).toEqual({ state: 'open', status: 3, assigned_to: 'me', q: 'printer', sort: 'priority', page: 2, page_size: 50 })
-  const junk = renderHook(() => useTicketFilters(), { wrapper: wrapper('/tickets?state=weird&status=abc&page=abc&page_size=999&sort=hack&dept_id=-1') })
+  const junk = renderHook(() => useTicketFilters(), { wrapper: wrapper('/tickets?state=weird&status=abc&page=abc&page_size=999&sort=hack&dept_id=-1&assigned_to=0') })
   expect(junk.result.current.filter).toEqual({ page: 1, page_size: 25, sort: '-last_message_at' })
+  const numeric = renderHook(() => useTicketFilters(), { wrapper: wrapper('/tickets?assigned_to=12') })
+  expect(numeric.result.current.filter.assigned_to).toBe('12')
 })
 
 test('set() updates params and resets page unless page itself changes', () => {

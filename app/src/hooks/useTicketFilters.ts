@@ -25,7 +25,8 @@ export function parseFilter(params: URLSearchParams): ListFilter {
   if (state && (STATES as string[]).includes(state)) f.state = state as TicketState
   const status = posInt(params.get('status')); if (status) f.status = status
   const dept = posInt(params.get('dept_id')); if (dept) f.dept_id = dept
-  if (assigned && (assigned === 'me' || assigned === 'none' || /^\d+$/.test(assigned))) f.assigned_to = assigned
+  if (assigned === 'me' || assigned === 'none') f.assigned_to = assigned
+  else { const id = posInt(assigned); if (id) f.assigned_to = String(id) }
   const q = params.get('q')?.trim(); if (q) f.q = q
   return f
 }
