@@ -9,6 +9,8 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminLayout } from './pages/admin/AdminLayout'
 import { DepartmentFormPage } from './pages/admin/DepartmentFormPage'
 import { DepartmentListPage } from './pages/admin/DepartmentListPage'
+import { StaffFormPage } from './pages/admin/StaffFormPage'
+import { StaffListPage } from './pages/admin/StaffListPage'
 import { TopicFormPage } from './pages/admin/TopicFormPage'
 import { TopicListPage } from './pages/admin/TopicListPage'
 import { TicketDetailPage } from './pages/TicketDetailPage'
@@ -34,6 +36,9 @@ export default function App() {
                 <Route path="topics" element={<TopicListPage />} />
                 <Route path="topics/new" element={<TopicFormPage />} />
                 <Route path="topics/:id" element={<TopicFormPage />} />
+                <Route path="staff" element={<StaffListPage />} />
+                <Route path="staff/new" element={<StaffFormPage />} />
+                <Route path="staff/:id" element={<StaffFormPage />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFoundPage />} />
