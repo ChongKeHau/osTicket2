@@ -1,0 +1,66 @@
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import App from '../App'
+import { REFRESH_KEY, tokens } from '../api/client'
+import { renderWithProviders } from '../test/render'
+import { server } from '../test/setup'
+
+beforeEach(() => tokens.clear())
+
+test('anonymous visit to /tickets redirects to /login and back after login', async () => {
+  renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  await userEvent.type(screen.getByLabelText(/username/i), 'agent')
+  await userEvent.type(screen.getByLabelText(/password/i), 'password1')
+  await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+  expect(await screen.findByText(/Ann Agent/)).toBeInTheDocument()
+  expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-1')
+  expect(screen.queryByRole('heading', { name: /sign in/i })).not.toBeInTheDocument()
+})
+
+test('wrong password shows an error', async () => {
+  renderWithProviders(<App />, { route: '/login' })
+  await userEvent.type(await screen.findByLabelText(/username/i), 'agent')
+  await userEvent.type(screen.getByLabelText(/password/i), 'nope')
+  await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+  expect(await screen.findByText(/invalid username or password/i)).toBeInTheDocument()
+})
+
+test('reload with a stored refresh token restores the session', async () => {
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByText(/Ann Agent/)).toBeInTheDocument()
+  expect(tokens.access).toBe('access-2')
+})
+
+test('stale refresh token on reload lands on login with a notice', async () => {
+  localStorage.setItem(REFRESH_KEY, 'stale')
+  renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(screen.getByText(/session expired/i)).toBeInTheDocument()
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('logout clears storage and returns to login', async () => {
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  renderWithProviders(<App />, { route: '/tickets' })
+  await screen.findByText(/Ann Agent/)
+  await userEvent.click(screen.getByRole('button', { name: /sign out/i }))
+  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('mid-session refresh failure routes to login with the notice', async () => {
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  renderWithProviders(<App />, { route: '/tickets' })
+  await screen.findByText(/Ann Agent/)
+  await screen.findByText(/Tickets \(1\)/)
+  server.use(
+    http.get('/api/v1/tickets', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
+    http.post('/api/v1/auth/refresh', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
+  )
+  await userEvent.click(screen.getByRole('link', { name: /new ticket/i }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument())
+  expect(screen.getByText(/session expired/i)).toBeInTheDocument()
+})

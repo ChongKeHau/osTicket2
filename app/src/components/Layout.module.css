@@ -1,0 +1,7 @@
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+.header { display: flex; align-items: center; gap: 24px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.brand { font-weight: 700; color: var(--text); }
+.nav { display: flex; gap: 16px; }
+.nav :global(a.active) { font-weight: 600; }
+.user { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.main { padding: 20px; max-width: 1200px; width: 100%; margin: 0 auto; }
