@@ -12,7 +12,10 @@ import (
 	"github.com/grandpine/ticket-api/internal/auth"
 )
 
-type fake struct{ topics []Topic }
+type fake struct {
+	topics []Topic
+	got    UpdateInput // the last Update input
+}
 
 func (f *fake) List(context.Context) ([]Topic, error)           { return f.topics, nil }
 func (f *fake) Get(_ context.Context, id int64) (*Topic, error) { return nil, apperr.ErrNotFound }
@@ -20,6 +23,7 @@ func (f *fake) Create(_ context.Context, in CreateInput) (*Topic, error) {
 	return &Topic{ID: 9, Name: in.Name}, nil
 }
 func (f *fake) Update(_ context.Context, id int64, in UpdateInput) (*Topic, error) {
+	f.got = in
 	return &Topic{ID: id, Name: "u"}, nil
 }
 func (f *fake) Delete(_ context.Context, id int64) error { return nil }
@@ -64,5 +68,33 @@ func TestTopicRoutes(t *testing.T) {
 	}
 	if w := call(admin, http.MethodDelete, "/api/v1/topics/1", ""); w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
+	}
+}
+
+func TestUpdateTopicNullRefsClear(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	f := &fake{}
+	r := gin.New()
+	private := r.Group("/api/v1", func(c *gin.Context) {
+		auth.WithPrincipal(c, auth.Principal{StaffID: 1, IsAdmin: true})
+	})
+	NewHandler(f).Mount(private)
+	if w := call(r, http.MethodPatch, "/api/v1/topics/1", `{"dept_id":null,"priority_id":null}`); w.Code != 200 {
+		t.Fatalf("null refs: %d %s", w.Code, w.Body.String())
+	}
+	if !f.got.ClearDept || !f.got.ClearPriority {
+		t.Fatalf("null refs: want both clears, got %+v", f.got)
+	}
+	if w := call(r, http.MethodPatch, "/api/v1/topics/1", `{"priority_id":null}`); w.Code != 200 {
+		t.Fatalf("null priority: %d", w.Code)
+	}
+	if f.got.ClearDept || !f.got.ClearPriority {
+		t.Fatalf("null priority only: %+v", f.got)
+	}
+	if w := call(r, http.MethodPatch, "/api/v1/topics/1", `{}`); w.Code != 200 {
+		t.Fatalf("empty body: %d", w.Code)
+	}
+	if f.got.ClearDept || f.got.ClearPriority {
+		t.Fatalf("absent refs must not clear: %+v", f.got)
 	}
 }

@@ -87,3 +87,30 @@ func TestDepartmentRoutes(t *testing.T) {
 		t.Fatalf("agent delete: %d", w.Code)
 	}
 }
+
+func TestUpdateDepartmentNullManagerClears(t *testing.T) {
+	var got UpdateInput
+	f := &fake{update: func(id int64, in UpdateInput) (*Department, error) {
+		got = in
+		return &Department{ID: id}, nil
+	}}
+	r := router(f, true)
+	if w := call(r, http.MethodPatch, "/api/v1/departments/2", `{"manager_id":null}`); w.Code != 200 {
+		t.Fatalf("null manager: %d %s", w.Code, w.Body.String())
+	}
+	if !got.ClearManager || got.ManagerID != nil {
+		t.Fatalf("null manager: want ClearManager, got %+v", got)
+	}
+	if w := call(r, http.MethodPatch, "/api/v1/departments/2", `{}`); w.Code != 200 {
+		t.Fatalf("empty body: %d %s", w.Code, w.Body.String())
+	}
+	if got.ClearManager {
+		t.Fatalf("absent manager must not clear: %+v", got)
+	}
+	if w := call(r, http.MethodPatch, "/api/v1/departments/2", `{"manager_id":3}`); w.Code != 200 {
+		t.Fatalf("set manager: %d", w.Code)
+	}
+	if got.ClearManager || got.ManagerID == nil || *got.ManagerID != 3 {
+		t.Fatalf("set manager: %+v", got)
+	}
+}

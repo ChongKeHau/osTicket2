@@ -1,6 +1,7 @@
 package dept
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -63,9 +64,21 @@ func (h *Handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	raw, ok := httpx.ReadRawJSON(c)
+	if !ok {
+		return
+	}
 	var in UpdateInput
 	if !httpx.BindJSON(c, &in) {
 		return
+	}
+	// manager_id: an explicit JSON null clears the manager; an absent key
+	// leaves it unchanged (BindJSON alone can't tell the two apart, since
+	// both decode to a nil pointer).
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &keys)
+	if v, present := keys["manager_id"]; present && string(v) == "null" {
+		in.ClearManager = true
 	}
 	out, err := h.svc.Update(c.Request.Context(), id, in)
 	if err != nil {

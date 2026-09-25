@@ -3,7 +3,10 @@
 package httpx
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -94,6 +97,26 @@ func BindJSON(c *gin.Context, dst any) bool {
 	}
 	Fail(c, apperr.Validation("body", "malformed json"))
 	return false
+}
+
+// ReadRawJSON reads the whole request body and restores it onto the request
+// so a subsequent BindJSON can still bind it. It's used by handlers that need
+// to distinguish an explicit JSON null from an absent key, which a bound
+// struct alone can't tell apart (both decode to a nil pointer). On read
+// failure it writes the error response and returns ok=false.
+func ReadRawJSON(c *gin.Context) (json.RawMessage, bool) {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			Fail(c, apperr.ErrPayloadTooLarge)
+		} else {
+			Fail(c, apperr.Validation("body", "malformed json"))
+		}
+		return nil, false
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw, true
 }
 
 // ParseID reads a numeric path parameter.

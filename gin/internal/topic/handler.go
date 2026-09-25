@@ -1,6 +1,7 @@
 package topic
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -63,9 +64,24 @@ func (h *Handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	raw, ok := httpx.ReadRawJSON(c)
+	if !ok {
+		return
+	}
 	var in UpdateInput
 	if !httpx.BindJSON(c, &in) {
 		return
+	}
+	// dept_id/priority_id: an explicit JSON null clears the field; an absent
+	// key leaves it unchanged (BindJSON alone can't tell the two apart, since
+	// both decode to a nil pointer).
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &keys)
+	if v, present := keys["dept_id"]; present && string(v) == "null" {
+		in.ClearDept = true
+	}
+	if v, present := keys["priority_id"]; present && string(v) == "null" {
+		in.ClearPriority = true
 	}
 	out, err := h.svc.Update(c.Request.Context(), id, in)
 	if err != nil {
