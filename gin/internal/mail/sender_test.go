@@ -44,6 +44,32 @@ func TestSMTPTransportSends(t *testing.T) {
 	}
 }
 
+// TestSMTPDeadlinePerSend: the timeout applies to each message exchange, not
+// to the whole session, so a batch that outlasts one timeout still goes out.
+func TestSMTPDeadlinePerSend(t *testing.T) {
+	srv := startFakeSMTP(t)
+	o := smtpOpts(srv.addr)
+	o.Timeout = 500 * time.Millisecond
+	sess, err := NewSMTP(o).Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := Build(Outgoing{From: Address{Address: "a@b.test"}, To: Address{Address: "c@d.test"}, Subject: "hi", MessageID: "<m@b.test>", Text: "t"})
+	for i := 0; i < 2; i++ {
+		time.Sleep(300 * time.Millisecond) // the second send starts past Open + Timeout
+		if err := sess.Send(context.Background(), "a@b.test", "c@d.test", raw); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := sess.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if got := srv.received(); len(got) != 2 {
+		t.Fatalf("received = %d", len(got))
+	}
+}
+
 func TestBackoff(t *testing.T) {
 	want := map[int]time.Duration{1: time.Minute, 2: 5 * time.Minute, 3: 15 * time.Minute, 4: time.Hour, 9: time.Hour}
 	for attempts, d := range want {

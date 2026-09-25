@@ -74,15 +74,24 @@ func (s *SMTP) Open(ctx context.Context) (Session, error) {
 			return nil, fmt.Errorf("smtp auth %s: %w", addr, err)
 		}
 	}
-	return &smtpSession{c: c}, nil
+	return &smtpSession{c: c, conn: conn, timeout: s.o.Timeout}, nil
 }
 
-// smtpSession sends messages over one *smtp.Client connection.
-type smtpSession struct{ c *smtp.Client }
+// smtpSession sends messages over one *smtp.Client connection. The deadline
+// set in Open covers the handshake only; each Send and Close sets a fresh one
+// so a long batch never trips a session-wide deadline.
+type smtpSession struct {
+	c       *smtp.Client
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func (s *smtpSession) refreshDeadline() { _ = s.conn.SetDeadline(time.Now().Add(s.timeout)) }
 
 // Send delivers raw to one recipient. On any error the connection is reset so
 // the next message on the same session starts clean.
 func (s *smtpSession) Send(_ context.Context, from, to string, raw []byte) error {
+	s.refreshDeadline()
 	if err := s.send(from, to, raw); err != nil {
 		_ = s.c.Reset()
 		return err
@@ -112,6 +121,7 @@ func (s *smtpSession) send(from, to string, raw []byte) error {
 
 // Close ends the session, falling back to a hard close if Quit fails.
 func (s *smtpSession) Close() error {
+	s.refreshDeadline()
 	if err := s.c.Quit(); err != nil {
 		return s.c.Close()
 	}
