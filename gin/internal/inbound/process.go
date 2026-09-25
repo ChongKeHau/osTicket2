@@ -50,18 +50,26 @@ func NewProcessor(b db.Beginner, store attachment.Storage, notifier mail.Notifie
 // leave the message unseen and retry later.
 func (p *Processor) Process(ctx context.Context, raw []byte) (Outcome, error) {
 	parsed, perr := Parse(raw, p.opts.MaxAttachment)
+	var messageID string
+	if perr == nil {
+		messageID = parsed.MessageID
+	} else {
+		sum := sha256.Sum256(raw)
+		messageID = "<sha256-" + hex.EncodeToString(sum[:]) + "@inbound.local>"
+	}
 	var out Outcome
 	var stored []string
 	err := db.WithTx(ctx, p.db, func(q *db.Queries) error {
-		if perr != nil {
-			sum := sha256.Sum256(raw)
-			return p.record(ctx, q, &out, "<sha256-"+hex.EncodeToString(sum[:])+"@inbound.local>", "", "", "", db.InboundOutcomeIgnored, "unparseable: "+perr.Error(), nil, nil)
-		}
-		if existing, err := q.GetInboundByMessageID(ctx, parsed.MessageID); err == nil {
+		// Dedupe before any other branch: a redelivery (commit succeeded,
+		// marking seen did not) returns the recorded outcome, never a second row.
+		if existing, err := q.GetInboundByMessageID(ctx, messageID); err == nil {
 			out = Outcome{Outcome: existing.Outcome, Reason: existing.Reason, TicketID: existing.TicketID, EntryID: existing.EntryID}
 			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
+		}
+		if perr != nil {
+			return p.record(ctx, q, &out, messageID, "", "", "", db.InboundOutcomeIgnored, "unparseable: "+dbSafe(perr.Error()), nil, nil)
 		}
 		if reason := IgnoreReason(parsed, p.opts.OwnAddress); reason != "" {
 			return p.record(ctx, q, &out, parsed.MessageID, parsed.FromAddress, parsed.FromName, parsed.Subject, db.InboundOutcomeIgnored, reason, nil, nil)

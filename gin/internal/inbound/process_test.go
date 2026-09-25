@@ -229,4 +229,29 @@ func TestProcessUnparseableIsRecorded(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("records = %d", n)
 	}
+	// Redelivery (commit succeeded, STORE \Seen did not) must dedupe, not
+	// hit the unique key.
+	again, err := f.proc.Process(f.ctx, []byte("garbage without headers"))
+	if err != nil || again.Outcome != db.InboundOutcomeIgnored {
+		t.Fatalf("again = %+v, %v", again, err)
+	}
+	_ = f.tx.QueryRow(f.ctx, "SELECT count(*) FROM inbound_message").Scan(&n)
+	if n != 1 {
+		t.Fatalf("records after redelivery = %d", n)
+	}
+}
+
+func TestProcessIgnoredIsDeduped(t *testing.T) {
+	f := newProcFixture(t)
+	for i := 0; i < 2; i++ {
+		out, err := f.proc.Process(f.ctx, fixture(t, "autoreply.eml"))
+		if err != nil || out.Outcome != db.InboundOutcomeIgnored {
+			t.Fatalf("pass %d: out = %+v, %v", i, out, err)
+		}
+	}
+	var n int
+	_ = f.tx.QueryRow(f.ctx, "SELECT count(*) FROM inbound_message").Scan(&n)
+	if n != 1 {
+		t.Fatalf("records = %d", n)
+	}
 }
