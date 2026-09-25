@@ -58,6 +58,8 @@ func Fail(c *gin.Context, err error) {
 		write(c, http.StatusConflict, "conflict", err.Error(), nil)
 	case errors.Is(err, apperr.ErrPayloadTooLarge):
 		write(c, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error(), nil)
+	case errors.Is(err, apperr.ErrRateLimited):
+		write(c, http.StatusTooManyRequests, "rate_limited", "too many attempts, try again later", nil)
 	default:
 		slog.Error("internal error", "err", err, "request_id", c.GetString("request_id"),
 			"method", c.Request.Method, "path", c.Request.URL.Path)

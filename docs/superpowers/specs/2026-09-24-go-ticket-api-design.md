@@ -202,7 +202,7 @@ Reads are open to any authenticated agent. Writes require admin.
 - Error envelope:
   `{"error": {"code": "...", "message": "...", "fields": {"subject": "required"}}}`.
   Codes and statuses: `validation_failed` 400, `unauthorized` 401, `forbidden` 403,
-  `not_found` 404, `conflict` 409, `payload_too_large` 413, `internal` 500.
+  `not_found` 404, `conflict` 409, `payload_too_large` 413, `rate_limited` 429, `internal` 500.
 - List envelope: `{items, page, page_size, total}` for offset lists;
   `{items, next_after}` for the thread cursor.
 - CORS allows the React origin(s) from config. No CSRF protection is needed because

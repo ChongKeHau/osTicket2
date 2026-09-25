@@ -72,6 +72,9 @@ func (s *Service) Refresh(ctx context.Context, raw string) (*Session, error) {
 			return apperr.ErrUnauthorized
 		}
 		st, err := q.GetStaff(ctx, rt.StaffID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrUnauthorized
+		}
 		if err != nil {
 			return err
 		}
@@ -84,8 +87,13 @@ func (s *Service) Refresh(ctx context.Context, raw string) (*Session, error) {
 	return sess, err
 }
 
-func (s *Service) Logout(ctx context.Context, raw string) error {
-	return db.New(s.db).RevokeRefreshToken(ctx, HashRefreshToken(raw))
+// Logout revokes raw, scoped to staffID: it is a no-op (not an error) if raw
+// belongs to a different staff id, so one caller can never revoke someone
+// else's session.
+func (s *Service) Logout(ctx context.Context, staffID int64, raw string) error {
+	return db.New(s.db).RevokeRefreshToken(ctx, db.RevokeRefreshTokenParams{
+		TokenHash: HashRefreshToken(raw), StaffID: staffID,
+	})
 }
 
 func (s *Service) Me(ctx context.Context, staffID int64) (*StaffProfile, error) {

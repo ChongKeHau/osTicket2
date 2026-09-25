@@ -14,6 +14,7 @@ var (
 	ErrUnauthorized    = errors.New("unauthorized")
 	ErrConflict        = errors.New("conflict")
 	ErrPayloadTooLarge = errors.New("payload too large")
+	ErrRateLimited     = errors.New("rate limited")
 )
 
 // ValidationError carries per-field messages for a 400 response.

@@ -16,15 +16,17 @@ import (
 type fakeSvc struct {
 	login   func(u, p string) (*Session, error)
 	refresh func(raw string) (*Session, error)
-	logout  func(raw string) error
+	logout  func(staffID int64, raw string) error
 	me      func(id int64) (*StaffProfile, error)
 	load    func(id int64) (Principal, error)
 }
 
 func (f *fakeSvc) Login(_ context.Context, u, p string) (*Session, error)  { return f.login(u, p) }
 func (f *fakeSvc) Refresh(_ context.Context, raw string) (*Session, error) { return f.refresh(raw) }
-func (f *fakeSvc) Logout(_ context.Context, raw string) error              { return f.logout(raw) }
-func (f *fakeSvc) Me(_ context.Context, id int64) (*StaffProfile, error)   { return f.me(id) }
+func (f *fakeSvc) Logout(_ context.Context, staffID int64, raw string) error {
+	return f.logout(staffID, raw)
+}
+func (f *fakeSvc) Me(_ context.Context, id int64) (*StaffProfile, error) { return f.me(id) }
 func (f *fakeSvc) LoadPrincipal(_ context.Context, id int64) (Principal, error) {
 	return f.load(id)
 }
@@ -75,6 +77,7 @@ func TestLoginHandler(t *testing.T) {
 }
 
 func TestRefreshAndLogoutHandlers(t *testing.T) {
+	var lastLogoutStaffID int64
 	f := &fakeSvc{
 		refresh: func(raw string) (*Session, error) {
 			if raw == "good" {
@@ -82,7 +85,7 @@ func TestRefreshAndLogoutHandlers(t *testing.T) {
 			}
 			return nil, apperr.ErrUnauthorized
 		},
-		logout: func(raw string) error { return nil },
+		logout: func(staffID int64, raw string) error { lastLogoutStaffID = staffID; return nil },
 		load:   func(id int64) (Principal, error) { return Principal{StaffID: id}, nil },
 	}
 	tk := NewTokens(secret, time.Minute)
@@ -99,6 +102,79 @@ func TestRefreshAndLogoutHandlers(t *testing.T) {
 	access, _, _ := tk.IssueAccess(5, false)
 	if w := call(r, http.MethodPost, "/api/v1/auth/logout", `{"refresh_token":"good"}`, access); w.Code != 204 {
 		t.Fatalf("logout: %d", w.Code)
+	}
+	if lastLogoutStaffID != 5 {
+		t.Fatalf("logout must pass the caller's own staff id, got %d", lastLogoutStaffID)
+	}
+}
+
+// TestRequireAuthBearerCaseInsensitive proves the "Bearer" scheme match is
+// case-insensitive, per RFC 6750/7235, while the token itself still has to
+// be correct.
+func TestRequireAuthBearerCaseInsensitive(t *testing.T) {
+	f := &fakeSvc{
+		me:   func(id int64) (*StaffProfile, error) { return &StaffProfile{ID: id, Username: "u"}, nil },
+		load: func(id int64) (Principal, error) { return Principal{StaffID: id}, nil },
+	}
+	tk := NewTokens(secret, time.Minute)
+	r := router(f, tk)
+	token, _, _ := tk.IssueAccess(3, false)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("lowercase bearer scheme must be accepted: %d %s", w.Code, w.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "BEARER "+token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("uppercase bearer scheme must be accepted: %d %s", w.Code, w.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Basic "+token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 401 {
+		t.Fatalf("a non-bearer scheme must still be rejected: %d", w.Code)
+	}
+}
+
+// TestLoginRateLimiting proves the login handler blocks after 10 failed
+// attempts for the same username+client within the window, that a different
+// username is an independent counter, and that a success resets it.
+func TestLoginRateLimiting(t *testing.T) {
+	f := &fakeSvc{login: func(u, p string) (*Session, error) {
+		if p == "password1" {
+			return &Session{AccessToken: "a"}, nil
+		}
+		return nil, apperr.ErrUnauthorized
+	}}
+	r := router(f, NewTokens(secret, time.Minute))
+
+	for i := 0; i < 10; i++ {
+		if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"bob","password":"bad"}`, ""); w.Code != 401 {
+			t.Fatalf("attempt %d: %d", i+1, w.Code)
+		}
+	}
+	if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"bob","password":"bad"}`, ""); w.Code != 429 {
+		t.Fatalf("11th failed attempt must be rate limited: %d", w.Code)
+	}
+
+	if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"alice","password":"bad"}`, ""); w.Code != 401 {
+		t.Fatalf("a different username must not be limited: %d", w.Code)
+	}
+
+	for i := 0; i < 9; i++ {
+		call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"carol","password":"bad"}`, "")
+	}
+	if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"carol","password":"password1"}`, ""); w.Code != 200 {
+		t.Fatalf("success on the 10th attempt: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(r, http.MethodPost, "/api/v1/auth/login", `{"username":"carol","password":"bad"}`, ""); w.Code != 401 {
+		t.Fatalf("a success must reset the counter, got rate limited: %d", w.Code)
 	}
 }
 

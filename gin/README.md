@@ -15,6 +15,13 @@ Go 1.26+, Docker (Postgres and Flyway run as containers).
     go run ./cmd/api create-admin --username admin --email admin@example.test --password changeme1
     make run                # serves on :8080
 
+`create-admin` also takes optional `--first-name`/`--last-name` (first name
+defaults to `--username`, last name defaults to empty, when left out).
+
+`POST /auth/login` rate-limits by `username + client IP`: 10 attempts per 60s
+window, then `429 rate_limited` until the window rolls over; a successful
+login resets the counter.
+
 If port 5432 is already in use on your machine, set `POSTGRES_PORT` (e.g.
 `export POSTGRES_PORT=5433`) before `make migrate`/`make db-up`, and point
 `DATABASE_URL` at that port instead.

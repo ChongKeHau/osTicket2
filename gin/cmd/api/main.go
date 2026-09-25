@@ -136,13 +136,15 @@ func createAdmin(ctx context.Context, pool *pgxpool.Pool, args []string) error {
 	username := fs.String("username", "", "admin username")
 	email := fs.String("email", "", "admin email")
 	password := fs.String("password", "", "admin password (min 8 chars)")
+	firstName := fs.String("first-name", "", "admin first name (defaults to username)")
+	lastName := fs.String("last-name", "", "admin last name (defaults to empty)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *username == "" || *email == "" || *password == "" {
 		return errors.New("create-admin requires --username, --email and --password")
 	}
-	id, err := auth.CreateAdmin(ctx, pool, *username, *email, *password)
+	id, err := auth.CreateAdmin(ctx, pool, *username, *email, *password, *firstName, *lastName)
 	if err != nil {
 		return err
 	}

@@ -99,7 +99,7 @@ func TestRefreshRotatesAndRejectsReuse(t *testing.T) {
 	if _, err := f.svc.Refresh(f.ctx, "unknown"); !errors.Is(err, apperr.ErrUnauthorized) {
 		t.Fatalf("unknown token: got %v", err)
 	}
-	if err := f.svc.Logout(f.ctx, next.RefreshToken); err != nil {
+	if err := f.svc.Logout(f.ctx, f.agent.ID, next.RefreshToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.svc.Refresh(f.ctx, next.RefreshToken); !errors.Is(err, apperr.ErrUnauthorized) {
@@ -140,7 +140,7 @@ func TestLoadPrincipalAndMe(t *testing.T) {
 
 func TestCreateAdmin(t *testing.T) {
 	f := newFixture(t)
-	id, err := CreateAdmin(f.ctx, f.q.DB().(db.Beginner), "root", "root@example.test", "rootpassword")
+	id, err := CreateAdmin(f.ctx, f.q.DB().(db.Beginner), "root", "root@example.test", "rootpassword", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,73 @@ func TestCreateAdmin(t *testing.T) {
 	if err != nil || !p.IsAdmin {
 		t.Fatalf("admin principal: %+v %v", p, err)
 	}
-	if _, err := CreateAdmin(f.ctx, f.q.DB().(db.Beginner), "root", "other@example.test", "rootpassword"); !errors.Is(err, apperr.ErrConflict) {
+	st, err := f.q.GetStaff(f.ctx, id)
+	if err != nil || st.FirstName != "root" || st.LastName != "" {
+		t.Fatalf("empty first/last name defaults: %+v %v", st, err)
+	}
+	id2, err := CreateAdmin(f.ctx, f.q.DB().(db.Beginner), "root2", "root2@example.test", "rootpassword", "Root", "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st2, err := f.q.GetStaff(f.ctx, id2)
+	if err != nil || st2.FirstName != "Root" || st2.LastName != "Two" {
+		t.Fatalf("explicit first/last name: %+v %v", st2, err)
+	}
+	// A real unique-constraint violation aborts the shared test transaction
+	// (CreateAdmin doesn't run inside db.WithTx), so this must be the last
+	// statement in the test.
+	if _, err := CreateAdmin(f.ctx, f.q.DB().(db.Beginner), "root", "other@example.test", "rootpassword", "", ""); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("duplicate admin: %v", err)
+	}
+}
+
+// TestLogoutOnlyRevokesOwnToken proves that Logout is scoped to the caller's
+// staff id: a token that belongs to a different staff id is left alone.
+func TestLogoutOnlyRevokesOwnToken(t *testing.T) {
+	f := newFixture(t)
+	sess, err := f.svc.Login(f.ctx, "agent", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := f.q.CreateStaff(f.ctx, db.CreateStaffParams{
+		Username: "intruder", Email: "intruder@example.test", PasswordHash: "h",
+		IsActive: true, PrimaryDeptID: f.dept.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Logout(f.ctx, other.ID, sess.RefreshToken); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Refresh(f.ctx, sess.RefreshToken); err != nil {
+		t.Fatalf("logout with the wrong staff id must not revoke another staff's token: %v", err)
+	}
+}
+
+// TestRefreshMissingStaffAfterConsume proves that Refresh maps a missing
+// staff row (found after the refresh token itself was successfully
+// consumed) to ErrUnauthorized rather than surfacing the raw pgx.ErrNoRows.
+// The orphan row is created by dropping the FK constraint for the rest of
+// this test's transaction (it, and everything else, is rolled back at
+// cleanup regardless): refresh_token.staff_id cascades on a real staff
+// delete, which would remove the token too and never exercise this path.
+// The constraint is dropped for good (not re-added) because
+// ConsumeRefreshToken's UPDATE re-triggers FK validation on the row even
+// though it doesn't touch staff_id.
+func TestRefreshMissingStaffAfterConsume(t *testing.T) {
+	f := newFixture(t)
+	raw, hash, err := NewRefreshToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := f.q.DB()
+	if _, err := conn.Exec(f.ctx, `ALTER TABLE refresh_token DROP CONSTRAINT refresh_token_staff_id_fkey`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(f.ctx, `INSERT INTO refresh_token (token_hash, staff_id, expires_at) VALUES ($1, 999999, now() + interval '1 day')`, hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Refresh(f.ctx, raw); !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("refresh for a token whose staff row is gone: %v", err)
 	}
 }

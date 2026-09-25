@@ -10,11 +10,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CreateAdmin creates an active admin in the first department. Used by the CLI.
-func CreateAdmin(ctx context.Context, b db.Beginner, username, email, password string) (int64, error) {
+// CreateAdmin creates an active admin in the first department. Used by the
+// CLI. firstName defaults to username when empty; lastName defaults to "".
+func CreateAdmin(ctx context.Context, b db.Beginner, username, email, password, firstName, lastName string) (int64, error) {
 	hash, err := HashPassword(password)
 	if err != nil {
 		return 0, err
+	}
+	if firstName == "" {
+		firstName = username
 	}
 	q := db.New(b)
 	dept, err := q.FirstDepartment(ctx)
@@ -25,7 +29,7 @@ func CreateAdmin(ctx context.Context, b db.Beginner, username, email, password s
 		return 0, err
 	}
 	st, err := q.CreateStaff(ctx, db.CreateStaffParams{
-		Username: username, Email: email, PasswordHash: hash,
+		Username: username, Email: email, PasswordHash: hash, FirstName: firstName, LastName: lastName,
 		IsAdmin: true, IsActive: true, PrimaryDeptID: dept.ID,
 	})
 	if db.IsUniqueViolation(err) {

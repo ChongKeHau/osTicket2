@@ -45,6 +45,7 @@ func TestFailMapping(t *testing.T) {
 		{errors.Join(errors.New("wrapped"), apperr.ErrNotFound), 404, "not_found"},
 		{apperr.ErrConflict, 409, "conflict"},
 		{apperr.ErrPayloadTooLarge, 413, "payload_too_large"},
+		{apperr.ErrRateLimited, 429, "rate_limited"},
 		{errors.New("boom"), 500, "internal"},
 	}
 	for _, tc := range cases {

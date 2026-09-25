@@ -12,13 +12,18 @@ import (
 type SessionService interface {
 	Login(ctx context.Context, username, password string) (*Session, error)
 	Refresh(ctx context.Context, raw string) (*Session, error)
-	Logout(ctx context.Context, raw string) error
+	Logout(ctx context.Context, staffID int64, raw string) error
 	Me(ctx context.Context, staffID int64) (*StaffProfile, error)
 }
 
-type Handler struct{ svc SessionService }
+type Handler struct {
+	svc     SessionService
+	limiter *loginRateLimiter
+}
 
-func NewHandler(svc SessionService) *Handler { return &Handler{svc: svc} }
+func NewHandler(svc SessionService) *Handler {
+	return &Handler{svc: svc, limiter: newLoginRateLimiter()}
+}
 
 func (h *Handler) Mount(public, private *gin.RouterGroup) {
 	public.POST("/auth/login", h.login)
@@ -41,11 +46,18 @@ func (h *Handler) login(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
+	key := in.Username + "|" + c.ClientIP()
+	if !h.limiter.allow(key) {
+		httpx.Fail(c, apperr.ErrRateLimited)
+		return
+	}
 	sess, err := h.svc.Login(c.Request.Context(), in.Username, in.Password)
 	if err != nil {
+		h.limiter.recordFailure(key)
 		httpx.Fail(c, err)
 		return
 	}
+	h.limiter.reset(key)
 	c.JSON(http.StatusOK, sess)
 }
 
@@ -63,11 +75,16 @@ func (h *Handler) refresh(c *gin.Context) {
 }
 
 func (h *Handler) logout(c *gin.Context) {
+	p, ok := FromContext(c)
+	if !ok {
+		httpx.Fail(c, apperr.ErrUnauthorized)
+		return
+	}
 	var in refreshRequest
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	if err := h.svc.Logout(c.Request.Context(), in.RefreshToken); err != nil {
+	if err := h.svc.Logout(c.Request.Context(), p.StaffID, in.RefreshToken); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

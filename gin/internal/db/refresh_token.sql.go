@@ -47,11 +47,19 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 }
 
 const revokeRefreshToken = `-- name: RevokeRefreshToken :exec
-UPDATE refresh_token SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL
+UPDATE refresh_token SET revoked_at = now()
+WHERE token_hash = $1 AND staff_id = $2 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
-	_, err := q.db.Exec(ctx, revokeRefreshToken, tokenHash)
+type RevokeRefreshTokenParams struct {
+	TokenHash string
+	StaffID   int64
+}
+
+// Scoped to staff_id so a staff member can only ever revoke their own
+// token: logout must never let one caller revoke someone else's session.
+func (q *Queries) RevokeRefreshToken(ctx context.Context, arg RevokeRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, revokeRefreshToken, arg.TokenHash, arg.StaffID)
 	return err
 }
 

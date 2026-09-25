@@ -19,11 +19,13 @@ func RequireAuth(tokens *Tokens, loader PrincipalLoader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		const prefix = "Bearer "
 		h := c.GetHeader("Authorization")
-		if !strings.HasPrefix(h, prefix) {
+		// The scheme ("Bearer") is case-insensitive per RFC 6750/7235; only
+		// the token that follows it is compared exactly.
+		if len(h) < len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
 			httpx.Fail(c, apperr.ErrUnauthorized)
 			return
 		}
-		claims, err := tokens.ParseAccess(strings.TrimSpace(strings.TrimPrefix(h, prefix)))
+		claims, err := tokens.ParseAccess(strings.TrimSpace(h[len(prefix):]))
 		if err != nil {
 			httpx.Fail(c, err)
 			return
