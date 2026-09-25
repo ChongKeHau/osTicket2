@@ -67,7 +67,7 @@ func TestFlywayMigrateTwice(t *testing.T) {
 	}
 
 	first := runFlyway()
-	if !strings.Contains(first, "Successfully applied 2 migrations") {
+	if !strings.Contains(first, "Successfully applied 3 migrations") {
 		t.Fatalf("first run:\n%s", first)
 	}
 	second := runFlyway()
@@ -88,8 +88,8 @@ func TestFlywayMigrateTwice(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM flyway_schema_history WHERE success`).Scan(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied != 2 {
-		t.Fatalf("expected 2 successful migrations in history, got %d", applied)
+	if applied != 3 {
+		t.Fatalf("expected 3 successful migrations in history, got %d", applied)
 	}
 	var tables int
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('ticket','staff','department','thread_entry','file','attachment')`).Scan(&tables); err != nil {
