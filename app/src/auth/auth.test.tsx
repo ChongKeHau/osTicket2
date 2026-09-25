@@ -53,13 +53,19 @@ test('logout clears storage and returns to login', async () => {
 
 test('mid-session refresh failure routes to login with the notice', async () => {
   localStorage.setItem(REFRESH_KEY, 'refresh-1')
-  renderWithProviders(<App />, { route: '/tickets' })
+  const { client } = renderWithProviders(<App />, { route: '/tickets' })
   await screen.findByText(/Ann Agent/)
   await screen.findByText('Printer on fire')
   server.use(
     http.get('/api/v1/tickets', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
+    http.get('/api/v1/topics', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
     http.post('/api/v1/auth/refresh', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
   )
+  // NewTicketPage's reference-data fetch (including /topics) would otherwise be served from the
+  // FilterBar's already-fresh cache (useReferenceData has a 5-minute staleTime), never issuing a
+  // new request. Clear the cache so navigating to /tickets/new triggers a real GET /topics that
+  // hits the 401 override above.
+  client.clear()
   const nav = screen.getByRole('navigation')
   await userEvent.click(within(nav).getByRole('link', { name: /new ticket/i }))
   await waitFor(() => expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument())
