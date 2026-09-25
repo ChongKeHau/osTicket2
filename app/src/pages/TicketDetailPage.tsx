@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { getTicket } from '../api/tickets'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { EventsPanel } from '../components/EventsPanel'
 import { LoadingScreen } from '../components/LoadingScreen'
+import { Thread } from '../components/Thread'
 import { TicketHeader } from '../components/TicketHeader'
 import { ticketQueryKey } from '../hooks/useTicketMutations'
 
@@ -22,8 +24,9 @@ export function TicketDetailPage() {
     <div>
       <p><Link to="/tickets">← Tickets</Link></p>
       <TicketHeader ticket={q.data} />
-      <section aria-label="Thread" className="panel" />
+      <div className="panel"><Thread ticketId={id} /></div>
       <section aria-label="Composer" className="panel" />
+      <EventsPanel ticketId={id} />
     </div>
   )
 }
