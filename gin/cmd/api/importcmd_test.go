@@ -38,8 +38,9 @@ func TestImportFlagsRequireDSN(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing dsn must fail")
 	}
-	o, err := parseImportFlags([]string{"--mysql-dsn", "u:p@tcp(h)/d", "--files-dir", "/tmp/f", "--timezone", "UTC", "--batch", "10", "--dry-run"})
-	if err != nil || o.FilesDir != "/tmp/f" || o.Batch != 10 || !o.DryRun || o.Prefix != "ost_" {
+	dir := t.TempDir()
+	o, err := parseImportFlags([]string{"--mysql-dsn", "u:p@tcp(h)/d", "--files-dir", dir, "--timezone", "UTC", "--batch", "10", "--dry-run"})
+	if err != nil || o.FilesDir != dir || o.Batch != 10 || !o.DryRun || o.Prefix != "ost_" {
 		t.Fatalf("opts = %+v, %v", o, err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,13 +53,30 @@ func openSourceFile(ctx context.Context, src *Source, f SrcFile, filesDir string
 		rc, err := src.OpenChunks(ctx, f.ID)
 		return rc, "", err
 	case "F":
-		if f.Key == "" || filepath.Base(f.Key) != f.Key || strings.ContainsAny(f.Key, "/\\") {
+		k := f.Key
+		if k == "" || k == "." || k == ".." || filepath.Base(k) != k || strings.ContainsAny(k, "/\\") {
 			return nil, "invalid file key", nil
 		}
 		if filesDir == "" {
 			return nil, ReasonFilesDirMissing, nil
 		}
-		for _, p := range []string{filepath.Join(filesDir, f.Key), filepath.Join(filesDir, f.Key[:min(2, len(f.Key))], f.Key)} {
+		// The storage-fs plugin nests files one key character per level up to
+		// its configured depth; a two-character first level is tried last.
+		candidates := []string{filepath.Join(filesDir, k)}
+		for depth := 1; depth <= min(3, len(k)); depth++ {
+			parts := []string{filesDir}
+			for i := 0; i < depth; i++ {
+				parts = append(parts, k[i:i+1])
+			}
+			candidates = append(candidates, filepath.Join(append(parts, k)...))
+		}
+		if len(k) >= 2 {
+			candidates = append(candidates, filepath.Join(filesDir, k[:2], k))
+		}
+		for _, p := range candidates {
+			if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
+				continue
+			}
 			if fh, err := os.Open(p); err == nil {
 				return fh, "", nil
 			}
@@ -69,7 +87,27 @@ func openSourceFile(ctx context.Context, src *Source, f SrcFile, filesDir string
 	}
 }
 
-func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *Report, store attachment.Storage, filesDir string) error {
+// removeBlobs deletes stored files whose rows were rolled back. It is best
+// effort: failures are logged, not returned.
+func removeBlobs(store attachment.Storage, keys []string) {
+	for _, k := range keys {
+		// A fresh context: the step's may be the one that was cancelled.
+		if err := store.Delete(context.Background(), k); err != nil {
+			slog.Warn("import: could not remove stored file after a failed step", "key", k, "err", err)
+		}
+	}
+}
+
+// importFiles copies attached files into store and inserts their file and
+// attachment rows. Blobs are stored before their rows, so when the step fails
+// (and its rows roll back) the blobs it wrote are deleted again.
+func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *Report, store attachment.Storage, filesDir string) (err error) {
+	var stored []string
+	defer func() {
+		if err != nil {
+			removeBlobs(store, stored)
+		}
+	}()
 	// claimed tracks, for each source file id, every target entry that already
 	// has its own copy of it (target entry id -> target file id). attachment has
 	// a UNIQUE index on file_id, so a source file attached to a second, different
@@ -118,11 +156,17 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 		if err != nil {
 			return 0, "", fmt.Errorf("store file %d: %w", a.FileID, err)
 		}
+		stored = append(stored, key)
 		if size != a.File.Size {
 			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("size %d differs from source %d", size, a.File.Size))
 		}
+		// Each target file row belongs to one attachment, so the attachment's
+		// own name (osTicket lets it differ from the file's) wins when set.
 		var tc textCleaner
-		name := strings.TrimSpace(tc.clean(a.File.Name))
+		name := strings.TrimSpace(tc.clean(a.Name))
+		if name == "" {
+			name = strings.TrimSpace(tc.clean(a.File.Name))
+		}
 		if name == "" {
 			name = key
 		}

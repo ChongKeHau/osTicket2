@@ -37,8 +37,10 @@ func TestStorageKeyAndDiscard(t *testing.T) {
 }
 
 func TestOpenSourceFileInvalidKey(t *testing.T) {
-	rc, reason, err := openSourceFile(context.Background(), nil, SrcFile{Backend: "F", Key: "../etc/passwd"}, t.TempDir())
-	if err != nil || reason != "invalid file key" || rc != nil {
-		t.Fatalf("rc=%v reason=%q err=%v", rc, reason, err)
+	for _, key := range []string{"../etc/passwd", "..", ".", "", `a\b`} {
+		rc, reason, err := openSourceFile(context.Background(), nil, SrcFile{Backend: "F", Key: key}, t.TempDir())
+		if err != nil || reason != "invalid file key" || rc != nil {
+			t.Fatalf("key %q: rc=%v reason=%q err=%v", key, rc, reason, err)
+		}
 	}
 }

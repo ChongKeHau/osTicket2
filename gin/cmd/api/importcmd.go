@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/grandpine/ticket-api/internal/attachment"
@@ -82,6 +83,9 @@ func importOsticket(ctx context.Context, args []string) error {
 		return &exitError{code: 1, err: err}
 	}
 	rep, runErr := importer.Run(ctx, opts, pool, store)
+	if !opts.DryRun && runErr == nil {
+		slog.Info("import: attachment files stored", "dir", storageDir, "files", rep.Counter(importer.EntityFiles).Written)
+	}
 	fmt.Print(rep.String())
 	if opts.DryRun && runErr == nil {
 		fmt.Println("dry run: nothing was written")

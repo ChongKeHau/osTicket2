@@ -138,7 +138,8 @@ func TestImportFilesBothBackends(t *testing.T) {
 	if err := sink.db.QueryRow(ctx, "SELECT key, name, mime, size, sha256, uploaded_by FROM file WHERE id = $1", lk.Files[1]).Scan(&key, &name, &mime, &size, &sum, &by); err != nil {
 		t.Fatal(err)
 	}
-	if name != "notes.txt" || mime != "text/plain" || size != 11 || sum != "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9" || by == nil || *by != lk.Staff[1] {
+	// The attachment's own name ("renamed-notes.txt") wins over the file's ("notes.txt").
+	if name != "renamed-notes.txt" || mime != "text/plain" || size != 11 || sum != "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9" || by == nil || *by != lk.Staff[1] {
 		t.Fatalf("file 1 = %s %s %d %s %v", name, mime, size, sum, by)
 	}
 	rc, err := store.Open(ctx, key)
@@ -169,6 +170,75 @@ func TestImportFilesBothBackends(t *testing.T) {
 	}
 	if !rep.NeedsAttention() {
 		t.Fatal("skipped attachments need attention")
+	}
+}
+
+// TestImportFilesNestedLayout checks the storage-fs plugin's depth-2 layout
+// (<dir>/<k0>/<k1>/<key>).
+func TestImportFilesNestedLayout(t *testing.T) {
+	sink, src, lk, rep := setupThroughTickets(t)
+	ctx := context.Background()
+	if err := sink.Step(ctx, func(w *Writer) error { return importEntries(ctx, src, w, lk, rep) }); err != nil {
+		t.Fatal(err)
+	}
+	filesDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(filesDir, "f", "s"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filesDir, "f", "s", "fskey2"), []byte("PNG!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Step(ctx, func(w *Writer) error { return importFiles(ctx, src, w, lk, rep, discardStorage{}, filesDir) }); err != nil {
+		t.Fatal(err)
+	}
+	var size int64
+	if err := sink.db.QueryRow(ctx, "SELECT size FROM file WHERE id = $1", lk.Files[2]).Scan(&size); err != nil || size != 4 {
+		t.Fatalf("file 2 size = %d, %v (files = %+v)", size, err, rep.Counter(EntityFiles))
+	}
+}
+
+// failingStorage accepts the first Put, fails every later one, and records Delete calls.
+type failingStorage struct {
+	puts    []string
+	deleted []string
+}
+
+func (s *failingStorage) Put(_ context.Context, key string, r io.Reader) (int64, string, error) {
+	if len(s.puts) > 0 {
+		return 0, "", fmt.Errorf("disk full")
+	}
+	s.puts = append(s.puts, key)
+	return discardStorage{}.Put(context.Background(), key, r)
+}
+
+func (s *failingStorage) Open(context.Context, string) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("not stored")
+}
+
+func (s *failingStorage) Delete(_ context.Context, key string) error {
+	s.deleted = append(s.deleted, key)
+	return nil
+}
+
+// TestImportFilesRemovesBlobsOnFailure checks that when the files step fails,
+// the blobs it already stored are deleted, since their rows are rolled back.
+func TestImportFilesRemovesBlobsOnFailure(t *testing.T) {
+	sink, src, lk, rep := setupThroughTickets(t)
+	ctx := context.Background()
+	if err := sink.Step(ctx, func(w *Writer) error { return importEntries(ctx, src, w, lk, rep) }); err != nil {
+		t.Fatal(err)
+	}
+	filesDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(filesDir, "fskey2"), []byte("PNG!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := &failingStorage{}
+	err := sink.Step(ctx, func(w *Writer) error { return importFiles(ctx, src, w, lk, rep, store, filesDir) })
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("err = %v, want the storage failure", err)
+	}
+	if len(store.puts) != 1 || len(store.deleted) != 1 || store.deleted[0] != store.puts[0] {
+		t.Fatalf("puts = %v, deleted = %v; want the first key deleted", store.puts, store.deleted)
 	}
 }
 
@@ -241,8 +311,10 @@ func TestImportFilesSharedAcrossEntries(t *testing.T) {
 	if key == origKey {
 		t.Fatalf("expected a fresh storage key, got file 1's key %q again", key)
 	}
-	if name != "notes.txt" || name != origName {
-		t.Fatalf("name = %q, want %q (matching file 1)", name, origName)
+	// Attachment 8 has no name of its own, so its copy takes the file's name;
+	// the original copy keeps attachment 1's name.
+	if name != "notes.txt" || origName != "renamed-notes.txt" {
+		t.Fatalf("names = %q and %q, want notes.txt and renamed-notes.txt", name, origName)
 	}
 	if sum != origSum {
 		t.Fatalf("sha256 = %q, want %q (matching file 1's bytes)", sum, origSum)

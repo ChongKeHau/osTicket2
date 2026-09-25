@@ -4,6 +4,7 @@ package importer
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"time"
 )
@@ -41,6 +42,11 @@ func (o *Options) Validate() error {
 	}
 	if o.Batch < 1 {
 		return errors.New("--batch must be at least 1")
+	}
+	if o.FilesDir != "" {
+		if fi, err := os.Stat(o.FilesDir); err != nil || !fi.IsDir() {
+			return fmt.Errorf("--files-dir %q is not a directory", o.FilesDir)
+		}
 	}
 	loc, err := time.LoadLocation(o.Timezone)
 	if err != nil {

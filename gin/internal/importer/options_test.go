@@ -1,6 +1,8 @@
 package importer
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -19,6 +21,10 @@ func TestOptionsValidateDefaults(t *testing.T) {
 }
 
 func TestOptionsValidateErrors(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name string
 		o    Options
@@ -28,6 +34,8 @@ func TestOptionsValidateErrors(t *testing.T) {
 		{"batch", Options{MySQLDSN: "x", Batch: -1}, "--batch must be at least 1"},
 		{"tz", Options{MySQLDSN: "x", Timezone: "Mars/Olympus"}, "--timezone"},
 		{"prefix", Options{MySQLDSN: "x", Prefix: "ost`;"}, "--prefix"},
+		{"files-dir missing", Options{MySQLDSN: "x", FilesDir: filepath.Join(t.TempDir(), "nope")}, "is not a directory"},
+		{"files-dir is a file", Options{MySQLDSN: "x", FilesDir: file}, "is not a directory"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -36,6 +44,13 @@ func TestOptionsValidateErrors(t *testing.T) {
 				t.Fatalf("got %v, want containing %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestOptionsFilesDirExists(t *testing.T) {
+	o := Options{MySQLDSN: "x", FilesDir: t.TempDir()}
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 
