@@ -60,18 +60,18 @@ func (s *SMTP) Open(ctx context.Context) (Session, error) {
 	c, err := smtp.NewClient(conn, s.o.Host)
 	if err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("smtp greeting: %w", err)
+		return nil, fmt.Errorf("smtp greeting %s: %w", addr, err)
 	}
 	if s.o.TLS == "starttls" {
 		if err := c.StartTLS(tlsCfg); err != nil {
 			c.Close()
-			return nil, fmt.Errorf("smtp starttls: %w", err)
+			return nil, fmt.Errorf("smtp starttls %s: %w", addr, err)
 		}
 	}
 	if s.o.User != "" {
 		if err := c.Auth(smtp.PlainAuth("", s.o.User, s.o.Password, s.o.Host)); err != nil {
 			c.Close()
-			return nil, fmt.Errorf("smtp auth: %w", err)
+			return nil, fmt.Errorf("smtp auth %s: %w", addr, err)
 		}
 	}
 	return &smtpSession{c: c}, nil

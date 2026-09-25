@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -59,16 +60,12 @@ func (s *Sender) RunOnce(ctx context.Context) (sent, failed int, err error) {
 		}
 		sess, openErr := s.t.Open(ctx)
 		if openErr != nil {
-			// A dial failure isn't any one row's fault: back off every row we
-			// claimed rather than leaving them pending with a burned attempt
-			// but no record of why.
-			for _, r := range rows {
-				if err := s.markFailed(ctx, q, r, openErr); err != nil {
-					return err
-				}
-				failed++
-			}
-			return nil
+			// An unreachable server or rejected login is no row's fault:
+			// returning the error rolls the claim back, so attempts and
+			// next_attempt_at are untouched and the rows stay pending for
+			// the next cycle. The backoff schedule is for per-message
+			// failures only.
+			return &openError{err: openErr}
 		}
 		defer sess.Close()
 		for _, r := range rows {
@@ -143,9 +140,22 @@ func (s *Sender) cycle(ctx context.Context) {
 	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), cycleTimeout)
 	defer cancel()
 	if _, _, err := s.RunOnce(work); err != nil {
+		var oe *openError
+		if errors.As(err, &oe) {
+			// One line per cycle; the transport's error names the host and
+			// the server's reply, never the credentials.
+			s.log.Warn("email transport unavailable; outbox left pending", "err", oe.err)
+			return
+		}
 		s.log.Warn("email sender cycle failed", "err", err)
 	}
 }
+
+// openError marks a Transport.Open failure: the batch was rolled back untouched.
+type openError struct{ err error }
+
+func (e *openError) Error() string { return "open mail transport: " + e.err.Error() }
+func (e *openError) Unwrap() error { return e.err }
 
 func deref(s *string) string {
 	if s == nil {

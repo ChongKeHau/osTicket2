@@ -1,8 +1,10 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -143,26 +145,70 @@ func TestSenderOpensOneConnectionPerBatch(t *testing.T) {
 	}
 }
 
-func TestSenderDialFailureBacksOffAllRows(t *testing.T) {
+// downTransport fails every Open, as an unreachable server or a rejected
+// login does.
+type downTransport struct{ opens int }
+
+func (d *downTransport) Open(context.Context) (Session, error) {
+	d.opens++
+	return nil, errors.New("smtp auth smtp.example.test:465: 535 authentication failed")
+}
+
+// TestSenderOpenFailureLeavesRowsUntouched: an unreachable server is nobody's
+// row's fault, so the claim is rolled back (no attempt burned, no backoff, no
+// last_error), the cycle logs one warn line and the error is returned.
+func TestSenderOpenFailureLeavesRowsUntouched(t *testing.T) {
 	tx := testutil.Tx(t)
 	ctx := context.Background()
 	q := db.New(tx)
 	tid := newTicket(t, q)
-	id1 := queueOne(t, q, tid, "a@example.test")
-	id2 := queueOne(t, q, tid, "b@example.test")
-	// Nothing listens on 127.0.0.1:1, so Open fails to dial.
-	tr := NewSMTP(SMTPOptions{Host: "127.0.0.1", Port: 1, TLS: "none", Timeout: 2 * time.Second})
+	ids := []int64{queueOne(t, q, tid, "a@example.test"), queueOne(t, q, tid, "b@example.test")}
+	before := map[int64]db.EmailOutbox{}
+	for _, id := range ids {
+		before[id], _ = q.GetOutbox(ctx, id)
+	}
+	tr := &downTransport{}
 	s := NewSender(tx, tr, Address{Address: "desk@example.test"}, 20)
-	before := time.Now()
+	var logs bytes.Buffer
+	s.log = slog.New(slog.NewTextHandler(&logs, nil))
 	sent, failed, err := s.RunOnce(ctx)
-	if err != nil || sent != 0 || failed != 2 {
+	if err == nil || sent != 0 || failed != 0 {
 		t.Fatalf("run = %d %d %v", sent, failed, err)
 	}
-	for _, id := range []int64{id1, id2} {
+	s.cycle(ctx)
+	if tr.opens != 2 {
+		t.Fatalf("opens = %d", tr.opens)
+	}
+	for _, id := range ids {
 		row, _ := q.GetOutbox(ctx, id)
-		if row.Status != db.EmailStatusPending || row.Attempts != 1 || row.LastError == nil || !row.NextAttemptAt.After(before) {
-			t.Fatalf("row %d = %+v", id, row)
+		b := before[id]
+		if row.Status != db.EmailStatusPending || row.Attempts != b.Attempts || row.LastError != nil || !row.NextAttemptAt.Equal(b.NextAttemptAt) {
+			t.Fatalf("row %d = %+v, before %+v", id, row, b)
 		}
+	}
+	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], "level=WARN") || !strings.Contains(lines[0], "smtp.example.test") {
+		t.Fatalf("cycle logs = %q", logs.String())
+	}
+}
+
+// TestSenderDialFailureNamesHostNotSecret uses the real transport against a
+// closed port: the returned error names the host and never the password.
+func TestSenderDialFailureNamesHostNotSecret(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	tid := newTicket(t, q)
+	id := queueOne(t, q, tid, "a@example.test")
+	// Nothing listens on 127.0.0.1:1, so Open fails to dial.
+	tr := NewSMTP(SMTPOptions{Host: "127.0.0.1", Port: 1, TLS: "none", User: "desk", Password: "s3cret-token", Timeout: 2 * time.Second})
+	s := NewSender(tx, tr, Address{Address: "desk@example.test"}, 20)
+	_, _, err := s.RunOnce(ctx)
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1") || strings.Contains(err.Error(), "s3cret-token") {
+		t.Fatalf("err = %v", err)
+	}
+	if row, _ := q.GetOutbox(ctx, id); row.Attempts != 0 || row.LastError != nil || row.Status != db.EmailStatusPending {
+		t.Fatalf("row = %+v", row)
 	}
 }
 
