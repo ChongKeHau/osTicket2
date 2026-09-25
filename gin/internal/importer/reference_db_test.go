@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/grandpine/ticket-api/internal/auth"
@@ -64,6 +65,13 @@ func TestReferenceSteps(t *testing.T) {
 	if lk.Departments[1] != lk.DefaultDept || lk.Departments[2] != 2 {
 		t.Fatalf("dept map = %+v", lk.Departments)
 	}
+	// Every manager in the fixture is imported (Support's manager is staff 1), so pass 2
+	// must not have recorded a missing-manager note.
+	for _, s := range rep.Counter(EntityDepartments).Samples {
+		if strings.Contains(s.Reason, "not imported") {
+			t.Fatalf("unexpected missing-manager note: %+v", s)
+		}
+	}
 	// Staff: passwords kept, duplicate email replaced, ldap user reset and moved to the seed dept.
 	var hash, email string
 	var prim int64
@@ -91,5 +99,32 @@ func TestReferenceSteps(t *testing.T) {
 	}
 	if rep.Counter(EntityTopics).Merged != 1 || rep.Counter(EntityTopics).Written != 2 {
 		t.Fatalf("topic report = %+v", rep.Counter(EntityTopics))
+	}
+}
+
+// TestPass2MissingManagerNoted checks that importDepartmentsPass2 records a note (not a skip)
+// when a pending manager's source staff id was never imported.
+func TestPass2MissingManagerNoted(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	sink := NewSink(tx, 2, false)
+	lk := NewLookup()
+	lk.PendingManagers[7] = 99
+	rep := NewReport()
+	if err := sink.Step(ctx, func(w *Writer) error { return importDepartmentsPass2(ctx, nil, w, lk, rep) }); err != nil {
+		t.Fatalf("pass2: %v", err)
+	}
+	c := rep.Counter(EntityDepartments)
+	if c.Skipped != 0 {
+		t.Fatalf("skipped = %d, want 0", c.Skipped)
+	}
+	found := false
+	for _, s := range c.Samples {
+		if s.ID == 7 && strings.Contains(s.Reason, "99") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a sample for dept 7 mentioning staff 99, got %+v", c.Samples)
 	}
 }

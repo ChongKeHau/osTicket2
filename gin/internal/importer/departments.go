@@ -62,10 +62,11 @@ func importDepartmentsPass1(ctx context.Context, src *Source, w *Writer, lk *Loo
 }
 
 // importDepartmentsPass2 sets manager_id now that staff exist.
-func importDepartmentsPass2(ctx context.Context, _ *Source, w *Writer, lk *Lookup, _ *Report) error {
+func importDepartmentsPass2(ctx context.Context, _ *Source, w *Writer, lk *Lookup, rep *Report) error {
 	for deptID, srcManager := range lk.PendingManagers {
 		staffID, ok := lk.Staff[srcManager]
 		if !ok {
+			rep.Note(EntityDepartments, deptID, fmt.Sprintf("manager staff %d not imported", srcManager))
 			continue
 		}
 		if err := w.Exec(ctx, "UPDATE department SET manager_id = $1 WHERE id = $2", staffID, deptID); err != nil {
