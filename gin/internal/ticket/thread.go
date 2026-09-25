@@ -14,6 +14,7 @@ import (
 	"github.com/grandpine/ticket-api/internal/auth"
 	"github.com/grandpine/ticket-api/internal/db"
 	"github.com/grandpine/ticket-api/internal/httpx"
+	"github.com/grandpine/ticket-api/internal/mail"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -114,6 +115,18 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 			return err
 		}
 		if err := q.MarkTicketAnswered(ctx, id); err != nil {
+			return err
+		}
+		fresh, err := q.GetTicket(ctx, id)
+		if err != nil {
+			return err
+		}
+		eid := entry.ID
+		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
+			TemplateKey: "ticket_reply", TicketID: id, EntryID: &eid,
+			To:   []mail.Recipient{{Name: fresh.RequesterName, Address: fresh.RequesterEmail}},
+			Vars: ticketVars(fresh, fullName(&st.FirstName, &st.LastName), in.Body, in.Format),
+		}); err != nil {
 			return err
 		}
 		if in.StatusID != nil {
@@ -253,7 +266,17 @@ func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffI
 		if err := q.SetTicketAssignee(ctx, db.SetTicketAssigneeParams{ID: id, AssignedStaffID: staffID}); err != nil {
 			return err
 		}
-		return event(ctx, q, id, &p.StaffID, db.TicketEventKindAssigned, map[string]any{"staff_id": *staffID})
+		if err := event(ctx, q, id, &p.StaffID, db.TicketEventKindAssigned, map[string]any{"staff_id": *staffID}); err != nil {
+			return err
+		}
+		if *staffID == p.StaffID {
+			return nil
+		}
+		return s.notifier.Enqueue(ctx, q, mail.Notification{
+			TemplateKey: "assigned_alert", TicketID: id,
+			To:   []mail.Recipient{{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email}},
+			Vars: ticketVars(row, fullName(&st.FirstName, &st.LastName), "", "text"),
+		})
 	})
 }
 
@@ -310,6 +333,66 @@ func (s *service) Events(ctx context.Context, p auth.Principal, id int64) ([]Eve
 			e.Staff = &Ref{ID: *r.StaffID, Name: fullName(r.StaffFirstName, r.StaffLastName)}
 		}
 		out = append(out, e)
+	}
+	return out, nil
+}
+
+// AppendMessage appends a requester message to a ticket (inbound mail) and
+// alerts the assignee, or every active staff member of the department when
+// unassigned.
+func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageInput) (*Entry, error) {
+	var out *Entry
+	err := db.WithTx(ctx, s.db, func(q *db.Queries) error {
+		if err := q.LockTicket(ctx, ticketID); err != nil {
+			return err
+		}
+		row, err := q.GetTicket(ctx, ticketID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return notFound(ticketID)
+		}
+		if err != nil {
+			return err
+		}
+		entry, err := q.CreateThreadEntry(ctx, db.CreateThreadEntryParams{
+			TicketID: ticketID, Type: db.ThreadEntryTypeMessage, Poster: in.Poster, Body: in.Body, Format: bodyFormat(in.Format),
+		})
+		if err != nil {
+			return err
+		}
+		if err := attachFiles(ctx, q, SystemPrincipal, entry.ID, in.FileIDs); err != nil {
+			return err
+		}
+		if err := q.MarkTicketUnanswered(ctx, ticketID); err != nil {
+			return err
+		}
+		var to []mail.Recipient
+		if row.AssignedStaffID != nil {
+			st, err := q.GetStaff(ctx, *row.AssignedStaffID)
+			if err != nil {
+				return err
+			}
+			to = append(to, mail.Recipient{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email})
+		} else {
+			members, err := q.ListActiveStaffForDept(ctx, row.DeptID)
+			if err != nil {
+				return err
+			}
+			for _, st := range members {
+				to = append(to, mail.Recipient{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email})
+			}
+		}
+		eid := entry.ID
+		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
+			TemplateKey: "message_alert", TicketID: ticketID, EntryID: &eid, To: to,
+			Vars: ticketVars(row, "", in.Body, in.Format),
+		}); err != nil {
+			return err
+		}
+		out, err = entryWithAttachments(ctx, q, entry)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

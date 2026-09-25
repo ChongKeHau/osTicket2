@@ -63,6 +63,9 @@ type CreateInput struct {
 	DueAt          *time.Time      `json:"due_at"`
 	Extra          json.RawMessage `json:"extra"`
 	FileIDs        []int64         `json:"file_ids"`
+	// AutoSubmitted is set only by inbound mail processing (CreateExternal);
+	// it suppresses the autoresponder for tickets opened by inbound mail.
+	AutoSubmitted bool `json:"-"`
 }
 
 type UpdateInput struct {

@@ -73,6 +73,12 @@ func (f *fakeSvc) Transfer(_ context.Context, p auth.Principal, id int64, deptID
 func (f *fakeSvc) Events(_ context.Context, p auth.Principal, id int64) ([]Event, error) {
 	return []Event{{ID: 1, Kind: "created"}}, nil
 }
+func (f *fakeSvc) CreateExternal(_ context.Context, in ExternalCreateInput) (*Ticket, error) {
+	return &Ticket{ID: 1, Subject: in.Subject}, nil
+}
+func (f *fakeSvc) AppendMessage(_ context.Context, ticketID int64, in MessageInput) (*Entry, error) {
+	return &Entry{ID: 12, TicketID: ticketID, Type: "message", Body: in.Body}, nil
+}
 
 func newRouter(f *fakeSvc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
