@@ -6,6 +6,7 @@ import { RequireAuth } from './auth/RequireAuth'
 import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
 
 function TicketsPlaceholder() {
@@ -31,7 +32,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/tickets" replace />} />
             <Route path="/tickets" element={<TicketListPage />} />
             <Route path="/tickets/new" element={<TicketsPlaceholder />} />
-            <Route path="/tickets/:id" element={<TicketsPlaceholder />} />
+            <Route path="/tickets/:id" element={<TicketDetailPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>
