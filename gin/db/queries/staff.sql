@@ -45,3 +45,9 @@ SELECT EXISTS (
   LEFT JOIN staff_department sd ON sd.staff_id = s.id AND sd.dept_id = @dept_id
   WHERE s.id = @staff_id AND (s.is_admin OR s.primary_dept_id = @dept_id OR sd.dept_id IS NOT NULL)
 )::boolean AS can_see;
+
+-- name: ListActiveStaffForDept :many
+SELECT DISTINCT s.* FROM staff s
+LEFT JOIN staff_department sd ON sd.staff_id = s.id
+WHERE s.is_active AND (s.primary_dept_id = $1 OR sd.dept_id = $1)
+ORDER BY s.id;

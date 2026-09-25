@@ -157,6 +157,15 @@ func (q *Queries) MarkTicketAnswered(ctx context.Context, id int64) error {
 	return err
 }
 
+const markTicketUnanswered = `-- name: MarkTicketUnanswered :exec
+UPDATE ticket SET is_answered = false, last_message_at = clock_timestamp(), updated_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkTicketUnanswered(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, markTicketUnanswered, id)
+	return err
+}
+
 const setTicketAssignee = `-- name: SetTicketAssignee :exec
 UPDATE ticket SET assigned_staff_id = $2, updated_at = now() WHERE id = $1
 `
