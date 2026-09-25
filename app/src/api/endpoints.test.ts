@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../test/setup'
 import { sessionFixture } from '../test/fixtures'
 import { login, logout, me } from './auth'
-import { REFRESH_KEY, tokens } from './client'
+import { REFRESH_KEY, refreshSession, tokens } from './client'
 import { downloadFile, uploadFile } from './files'
 import { listStaff, listStatuses } from './reference'
 import { assign, listTickets, reply } from './tickets'
@@ -18,6 +18,61 @@ test('login stores tokens; logout posts refresh token and clears', async () => {
   server.use(http.post('/api/v1/auth/logout', async ({ request }) => { sent = ((await request.json()) as { refresh_token: string }).refresh_token; return new HttpResponse(null, { status: 204 }) }))
   await logout()
   expect(sent).toBe('refresh-1')
+  expect(tokens.access).toBeNull()
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('logout with no access token refreshes first and revokes the rotated token', async () => {
+  const calls: string[] = []
+  let sent = ''
+  let auth = ''
+  server.use(
+    http.post('/api/v1/auth/refresh', () => { calls.push('refresh'); return HttpResponse.json({ ...sessionFixture, access_token: 'access-2', refresh_token: 'refresh-2' }) }),
+    http.post('/api/v1/auth/logout', async ({ request }) => {
+      calls.push('logout')
+      auth = request.headers.get('authorization') ?? ''
+      sent = ((await request.json()) as { refresh_token: string }).refresh_token
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  localStorage.setItem(REFRESH_KEY, 'refresh-1') // e.g. page idle past the access-token lifetime, then reloaded
+  await logout()
+  expect(calls).toEqual(['refresh', 'logout'])
+  expect(auth).toBe('Bearer access-2')
+  expect(sent).toBe('refresh-2')
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('logout that gets 401 refreshes once and posts again', async () => {
+  const sent: string[] = []
+  server.use(
+    http.post('/api/v1/auth/logout', async ({ request }) => {
+      sent.push(((await request.json()) as { refresh_token: string }).refresh_token)
+      if (request.headers.get('authorization') !== 'Bearer access-2') return HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  tokens.setSession(sessionFixture) // access-1 has expired server-side
+  await logout()
+  expect(sent).toEqual(['refresh-1', 'refresh-2'])
+  expect(tokens.access).toBeNull()
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('logout during an in-flight refresh waits for it and ends with storage empty', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  let sent = ''
+  server.use(
+    http.post('/api/v1/auth/refresh', async () => { await gate; return HttpResponse.json({ ...sessionFixture, access_token: 'access-2', refresh_token: 'refresh-2' }) }),
+    http.post('/api/v1/auth/logout', async ({ request }) => { sent = ((await request.json()) as { refresh_token: string }).refresh_token; return new HttpResponse(null, { status: 204 }) }),
+  )
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  const inFlight = refreshSession()
+  const out = logout()
+  release()
+  await Promise.all([inFlight, out])
+  expect(sent).toBe('refresh-2')
   expect(tokens.access).toBeNull()
   expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
 })

@@ -71,6 +71,91 @@ test('failed refresh clears the session and notifies', async () => {
   tokens.setOnSessionLost(null)
 })
 
+const unauthorized = () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })
+const issued = (n: number) => HttpResponse.json({ ...sessionFixture, access_token: `access-${n}`, refresh_token: `refresh-${n}` })
+
+test('another tab rotating the shared token mid-refresh does not sign this tab out', async () => {
+  // Server: each refresh token is single-use and rotates to the next number.
+  const valid = new Set(['refresh-1'])
+  let next = 2
+  let releaseThisTab!: () => void
+  const otherTabDone = new Promise<void>((r) => { releaseThisTab = r })
+  server.use(http.post('/api/v1/auth/refresh', async ({ request: req }) => {
+    const { refresh_token } = (await req.json()) as { refresh_token: string }
+    if (req.headers.get('x-tab') !== 'other') await otherTabDone // the other tab's request wins the race
+    if (!valid.delete(refresh_token)) return unauthorized()
+    const n = next++
+    valid.add(`refresh-${n}`)
+    return issued(n)
+  }))
+  const lost = vi.fn()
+  tokens.setOnSessionLost(lost)
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+
+  const thisTab = refreshSession() // sends refresh-1
+  // The other tab (same localStorage) refreshes with refresh-1 too and stores its rotated token.
+  const res = await fetch('/api/v1/auth/refresh', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tab': 'other' }, body: JSON.stringify({ refresh_token: 'refresh-1' }),
+  })
+  localStorage.setItem(REFRESH_KEY, ((await res.json()) as { refresh_token: string }).refresh_token)
+  releaseThisTab()
+
+  expect(await thisTab).toBe(true) // got 401 for refresh-1, saw refresh-2 stored, retried with it
+  expect(lost).not.toHaveBeenCalled()
+  expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-3')
+  expect(tokens.access).toBe('access-3')
+  tokens.setOnSessionLost(null)
+})
+
+test('a 401 with no stored refresh token but a held access token ends the session once', async () => {
+  const lost = vi.fn()
+  tokens.setOnSessionLost(lost)
+  let refreshCalls = 0
+  server.use(
+    http.post('/api/v1/auth/refresh', () => { refreshCalls++; return issued(2) }),
+    http.get('/api/v1/ping', unauthorized),
+  )
+  tokens.setSession(sessionFixture)
+  localStorage.removeItem(REFRESH_KEY) // e.g. another tab cleared it
+  await expect(request('GET', '/ping')).rejects.toMatchObject({ status: 401 })
+  expect(lost).toHaveBeenCalledTimes(1)
+  expect(tokens.access).toBeNull()
+  expect(refreshCalls).toBe(0)
+  await expect(request('GET', '/ping')).rejects.toMatchObject({ status: 401 })
+  expect(lost).toHaveBeenCalledTimes(1)
+  tokens.setOnSessionLost(null)
+})
+
+test('a 5xx or network failure on refresh keeps the token and does not notify', async () => {
+  const lost = vi.fn()
+  tokens.setOnSessionLost(lost)
+  server.use(
+    http.post('/api/v1/auth/refresh', () => new HttpResponse('bad gateway', { status: 502 })),
+    http.get('/api/v1/ping', unauthorized),
+  )
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  expect(await refreshSession()).toBe(false)
+  await expect(request('GET', '/ping')).rejects.toMatchObject({ status: 401 })
+  server.use(http.post('/api/v1/auth/refresh', () => HttpResponse.error()))
+  expect(await refreshSession()).toBe(false)
+  expect(lost).not.toHaveBeenCalled()
+  expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-1')
+  tokens.setOnSessionLost(null)
+})
+
+test('a refresh that resolves after tokens.clear() does not restore the session', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  server.use(http.post('/api/v1/auth/refresh', async () => { await gate; return issued(2) }))
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  const pending = refreshSession()
+  tokens.clear()
+  release()
+  expect(await pending).toBe(false)
+  expect(tokens.access).toBeNull()
+  expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
 test('does not try to refresh for /auth/* paths', async () => {
   let refreshCalls = 0
   server.use(http.post('/api/v1/auth/refresh', () => { refreshCalls++; return HttpResponse.json(sessionFixture) }))

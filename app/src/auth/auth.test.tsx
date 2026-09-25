@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
 import { REFRESH_KEY, tokens } from '../api/client'
+import { sessionFixture } from '../test/fixtures'
 import { renderWithProviders } from '../test/render'
 import { server } from '../test/setup'
 
@@ -40,6 +41,39 @@ test('stale refresh token on reload lands on login with a notice', async () => {
   expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
   expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
+})
+
+test('a 502 on refresh at startup keeps the token and offers Retry', async () => {
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  server.use(http.post('/api/v1/auth/refresh', () => new HttpResponse('bad gateway', { status: 502 })))
+  renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the server/i)
+  expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-1')
+  expect(screen.queryByRole('heading', { name: /sign in/i })).not.toBeInTheDocument()
+  server.resetHandlers()
+  await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+  expect(await screen.findByText(/Ann Agent/)).toBeInTheDocument()
+  expect(await screen.findByText('Printer on fire')).toBeInTheDocument()
+})
+
+test('a 500 from /me at startup offers Retry; a 401 from /me shows the expired notice', async () => {
+  localStorage.setItem(REFRESH_KEY, 'refresh-1')
+  server.use(http.get('/api/v1/me', () => HttpResponse.json({ error: { code: 'internal', message: 'internal error' } }, { status: 500 })))
+  const { unmount } = renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
+  expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-2')
+  unmount()
+  let refreshCalls = 0
+  server.use(
+    http.get('/api/v1/me', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
+    // Startup refresh succeeds; the retry refresh triggered by /me's 401 is rejected.
+    http.post('/api/v1/auth/refresh', () => (++refreshCalls === 1
+      ? HttpResponse.json({ ...sessionFixture, access_token: 'access-3', refresh_token: 'refresh-3' })
+      : HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 }))),
+  )
+  renderWithProviders(<App />, { route: '/tickets' })
+  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(screen.getByText(/session expired/i)).toBeInTheDocument()
 })
 
 test('logout clears storage and returns to login', async () => {
