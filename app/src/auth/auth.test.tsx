@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
@@ -55,12 +55,13 @@ test('mid-session refresh failure routes to login with the notice', async () => 
   localStorage.setItem(REFRESH_KEY, 'refresh-1')
   renderWithProviders(<App />, { route: '/tickets' })
   await screen.findByText(/Ann Agent/)
-  await screen.findByText(/Tickets \(1\)/)
+  await screen.findByText('Printer on fire')
   server.use(
     http.get('/api/v1/tickets', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
     http.post('/api/v1/auth/refresh', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 })),
   )
-  await userEvent.click(screen.getByRole('link', { name: /new ticket/i }))
+  const nav = screen.getByRole('navigation')
+  await userEvent.click(within(nav).getByRole('link', { name: /new ticket/i }))
   await waitFor(() => expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument())
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
 })
