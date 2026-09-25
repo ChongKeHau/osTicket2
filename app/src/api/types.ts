@@ -29,6 +29,18 @@ export interface Status { id: number; name: string; state: TicketState; sort_ord
 export interface Department { id: number; name: string; is_public: boolean; manager_id: number | null }
 export interface Topic { id: number; name: string; dept_id: number | null; priority_id: number | null; is_active: boolean; sort_order: number }
 export interface Staff { id: number; username: string; email: string; first_name: string; last_name: string; is_admin: boolean; is_active: boolean; primary_dept_id: number; department_ids: number[] }
+
+export interface DepartmentInput { name: string; is_public: boolean; manager_id: number | null }
+export interface TopicInput { name: string; dept_id: number | null; priority_id: number | null; is_active: boolean; sort_order: number }
+export interface CreateStaffInput {
+  username: string; email: string; password: string; first_name: string; last_name: string
+  is_admin: boolean; primary_dept_id: number; department_ids: number[]
+}
+export interface UpdateStaffInput {
+  email?: string; first_name?: string; last_name?: string; is_admin?: boolean; is_active?: boolean
+  primary_dept_id?: number; department_ids?: number[]
+}
+
 export interface FileInfo { id: number; name: string; mime: string; size: number }
 
 export interface ListFilter {

@@ -37,6 +37,11 @@ type UpdateInput struct {
 	PriorityID *int64  `json:"priority_id"`
 	IsActive   *bool   `json:"is_active"`
 	SortOrder  *int32  `json:"sort_order"`
+	// ClearDept/ClearPriority are set by the handler when the body has an
+	// explicit "dept_id": null / "priority_id": null; they set the column to
+	// NULL (a nil pointer alone means "unchanged").
+	ClearDept     bool `json:"-"`
+	ClearPriority bool `json:"-"`
 }
 
 type Service interface {
@@ -105,7 +110,8 @@ func (s *service) Update(ctx context.Context, id int64, in UpdateInput) (*Topic,
 	if err := checkRefs(ctx, q, in.DeptID, in.PriorityID); err != nil {
 		return nil, err
 	}
-	r, err := q.UpdateTopic(ctx, db.UpdateTopicParams{ID: id, Name: in.Name, DeptID: in.DeptID, PriorityID: in.PriorityID, IsActive: in.IsActive, SortOrder: in.SortOrder})
+	r, err := q.UpdateTopic(ctx, db.UpdateTopicParams{ID: id, Name: in.Name, DeptID: in.DeptID, PriorityID: in.PriorityID,
+		ClearDept: in.ClearDept, ClearPriority: in.ClearPriority, IsActive: in.IsActive, SortOrder: in.SortOrder})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("topic %d: %w", id, apperr.ErrNotFound)
 	}

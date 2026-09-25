@@ -11,8 +11,8 @@ VALUES ($1, $2, $3, $4, $5) RETURNING *;
 -- name: UpdateTopic :one
 UPDATE help_topic
 SET name = COALESCE(sqlc.narg('name'), name),
-    dept_id = COALESCE(sqlc.narg('dept_id'), dept_id),
-    priority_id = COALESCE(sqlc.narg('priority_id'), priority_id),
+    dept_id = CASE WHEN @clear_dept::boolean THEN NULL ELSE COALESCE(sqlc.narg('dept_id'), dept_id) END,
+    priority_id = CASE WHEN @clear_priority::boolean THEN NULL ELSE COALESCE(sqlc.narg('priority_id'), priority_id) END,
     is_active = COALESCE(sqlc.narg('is_active'), is_active),
     sort_order = COALESCE(sqlc.narg('sort_order'), sort_order),
     updated_at = now()

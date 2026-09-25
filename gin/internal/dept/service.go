@@ -31,6 +31,10 @@ type UpdateInput struct {
 	Name      *string `json:"name" binding:"omitempty,min=1,max=128"`
 	IsPublic  *bool   `json:"is_public"`
 	ManagerID *int64  `json:"manager_id"`
+	// ClearManager is set by the handler when the body has an explicit
+	// "manager_id": null; it sets manager_id to NULL (ManagerID nil alone
+	// means "unchanged").
+	ClearManager bool `json:"-"`
 }
 
 type Service interface {
@@ -106,7 +110,7 @@ func (s *service) Update(ctx context.Context, id int64, in UpdateInput) (*Depart
 		if err := checkManager(ctx, q, in.ManagerID); err != nil {
 			return err
 		}
-		d, err := q.UpdateDepartment(ctx, db.UpdateDepartmentParams{ID: id, Name: in.Name, IsPublic: in.IsPublic, ManagerID: in.ManagerID})
+		d, err := q.UpdateDepartment(ctx, db.UpdateDepartmentParams{ID: id, Name: in.Name, IsPublic: in.IsPublic, ManagerID: in.ManagerID, ClearManager: in.ClearManager})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("department %d: %w", id, apperr.ErrNotFound)
 		}

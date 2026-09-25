@@ -132,23 +132,25 @@ const updateDepartment = `-- name: UpdateDepartment :one
 UPDATE department
 SET name = COALESCE($1, name),
     is_public = COALESCE($2, is_public),
-    manager_id = COALESCE($3, manager_id),
+    manager_id = CASE WHEN $3::boolean THEN NULL ELSE COALESCE($4, manager_id) END,
     updated_at = now()
-WHERE id = $4
+WHERE id = $5
 RETURNING id, name, is_public, manager_id, created_at, updated_at
 `
 
 type UpdateDepartmentParams struct {
-	Name      *string
-	IsPublic  *bool
-	ManagerID *int64
-	ID        int64
+	Name         *string
+	IsPublic     *bool
+	ClearManager bool
+	ManagerID    *int64
+	ID           int64
 }
 
 func (q *Queries) UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error) {
 	row := q.db.QueryRow(ctx, updateDepartment,
 		arg.Name,
 		arg.IsPublic,
+		arg.ClearManager,
 		arg.ManagerID,
 		arg.ID,
 	)

@@ -38,4 +38,17 @@ export const handlers = [
   http.post('/api/v1/tickets/:id/transfer', () => HttpResponse.json({ ...ticketFixture, department: { id: 2, name: 'Billing' } })),
   http.post('/api/v1/files', () => HttpResponse.json({ id: 42, name: 'a.txt', mime: 'text/plain', size: 3 }, { status: 201 })),
   http.get('/api/v1/files/:id', () => new HttpResponse('hello', { headers: { 'Content-Type': 'text/plain' } })),
+  http.post('/api/v1/departments', async ({ request }) => HttpResponse.json({ id: 9, is_public: true, manager_id: null, ...(await request.json() as object) }, { status: 201 })),
+  http.patch('/api/v1/departments/:id', async ({ request, params }) => HttpResponse.json({ ...referenceFixtures.departments[0], ...(await request.json() as object), id: Number(params.id) })),
+  http.delete('/api/v1/departments/:id', () => new HttpResponse(null, { status: 204 })),
+  http.post('/api/v1/topics', async ({ request }) => HttpResponse.json({ id: 9, dept_id: null, priority_id: null, is_active: true, sort_order: 0, ...(await request.json() as object) }, { status: 201 })),
+  http.patch('/api/v1/topics/:id', async ({ request, params }) => HttpResponse.json({ ...referenceFixtures.topics[0], ...(await request.json() as object), id: Number(params.id) })),
+  http.delete('/api/v1/topics/:id', () => new HttpResponse(null, { status: 204 })),
+  http.post('/api/v1/staff', async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>
+    delete body.password
+    return HttpResponse.json({ id: 9, is_active: true, department_ids: [], ...body }, { status: 201 })
+  }),
+  http.patch('/api/v1/staff/:id', async ({ request, params }) => HttpResponse.json({ ...referenceFixtures.staff[0], ...(await request.json() as object), id: Number(params.id) })),
+  http.post('/api/v1/staff/:id/password', () => new HttpResponse(null, { status: 204 })),
 ]

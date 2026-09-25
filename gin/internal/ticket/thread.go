@@ -541,7 +541,7 @@ func (h *Handler) assign(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	raw, ok := readRawJSON(c)
+	raw, ok := httpx.ReadRawJSON(c)
 	if !ok {
 		return
 	}

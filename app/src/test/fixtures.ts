@@ -41,3 +41,19 @@ export const referenceFixtures = {
     { id: 3, username: 'root', email: 'root@example.test', first_name: 'Root', last_name: 'Admin', is_admin: true, is_active: true, primary_dept_id: 1, department_ids: [1] },
   ] as Staff[],
 }
+
+export const adminProfileFixture: StaffProfile = {
+  id: 3, username: 'root', email: 'root@example.test', first_name: 'Root', last_name: 'Admin',
+  is_admin: true, department_ids: [1],
+}
+
+export const adminFixtures = {
+  departments: [
+    ...referenceFixtures.departments,
+    { id: 3, name: 'Sales', is_public: false, manager_id: 1 },
+  ] as Department[],
+  staff: [
+    ...referenceFixtures.staff,
+    { id: 4, username: 'old', email: 'old@example.test', first_name: 'Olive', last_name: 'Old', is_admin: false, is_active: false, primary_dept_id: 2, department_ids: [2] },
+  ] as Staff[],
+}

@@ -97,3 +97,34 @@ func TestDeleteTopicForeignKeyViolation(t *testing.T) {
 		t.Fatalf("expected a foreign key violation, got %v", err)
 	}
 }
+
+func TestUpdateTopicClearsRefs(t *testing.T) {
+	ctx := context.Background()
+	tx := testutil.Tx(t)
+	svc := NewService(tx)
+	q := db.New(tx)
+	dept, _ := q.FirstDepartment(ctx)
+	prio, _ := q.DefaultPriority(ctx)
+	created, err := svc.Create(ctx, CreateInput{Name: "Refunds", DeptID: &dept.ID, PriorityID: &prio.ID})
+	if err != nil || created.DeptID == nil || created.PriorityID == nil {
+		t.Fatalf("create: %+v %v", created, err)
+	}
+	// Absent refs leave them unchanged.
+	name := "Refunds 2"
+	kept, err := svc.Update(ctx, created.ID, UpdateInput{Name: &name})
+	if err != nil || kept.DeptID == nil || kept.PriorityID == nil {
+		t.Fatalf("absent refs changed them: %+v %v", kept, err)
+	}
+	onlyPrio, err := svc.Update(ctx, created.ID, UpdateInput{ClearPriority: true})
+	if err != nil || onlyPrio.PriorityID != nil || onlyPrio.DeptID == nil || *onlyPrio.DeptID != dept.ID {
+		t.Fatalf("clear priority: %+v %v", onlyPrio, err)
+	}
+	cleared, err := svc.Update(ctx, created.ID, UpdateInput{ClearDept: true})
+	if err != nil || cleared.DeptID != nil || cleared.PriorityID != nil {
+		t.Fatalf("clear dept: %+v %v", cleared, err)
+	}
+	got, err := svc.Get(ctx, created.ID)
+	if err != nil || got.DeptID != nil || got.PriorityID != nil || got.Name != name {
+		t.Fatalf("row after clear: %+v %v", got, err)
+	}
+}

@@ -4,7 +4,7 @@ import { staffName } from '../lib/format'
 import styles from './Layout.module.css'
 
 export function Layout() {
-  const { staff, logout } = useAuth()
+  const { staff, isAdmin, logout } = useAuth()
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
@@ -12,6 +12,7 @@ export function Layout() {
         <nav className={styles.nav}>
           <NavLink to="/tickets" end>Tickets</NavLink>
           <NavLink to="/tickets/new">New ticket</NavLink>
+          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <div className={styles.user}>
           {staff && <span>{staffName(staff)}</span>}

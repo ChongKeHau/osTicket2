@@ -123,28 +123,32 @@ func (q *Queries) ListTopics(ctx context.Context) ([]HelpTopic, error) {
 const updateTopic = `-- name: UpdateTopic :one
 UPDATE help_topic
 SET name = COALESCE($1, name),
-    dept_id = COALESCE($2, dept_id),
-    priority_id = COALESCE($3, priority_id),
-    is_active = COALESCE($4, is_active),
-    sort_order = COALESCE($5, sort_order),
+    dept_id = CASE WHEN $2::boolean THEN NULL ELSE COALESCE($3, dept_id) END,
+    priority_id = CASE WHEN $4::boolean THEN NULL ELSE COALESCE($5, priority_id) END,
+    is_active = COALESCE($6, is_active),
+    sort_order = COALESCE($7, sort_order),
     updated_at = now()
-WHERE id = $6
+WHERE id = $8
 RETURNING id, name, dept_id, priority_id, is_active, sort_order, created_at, updated_at
 `
 
 type UpdateTopicParams struct {
-	Name       *string
-	DeptID     *int64
-	PriorityID *int64
-	IsActive   *bool
-	SortOrder  *int32
-	ID         int64
+	Name          *string
+	ClearDept     bool
+	DeptID        *int64
+	ClearPriority bool
+	PriorityID    *int64
+	IsActive      *bool
+	SortOrder     *int32
+	ID            int64
 }
 
 func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (HelpTopic, error) {
 	row := q.db.QueryRow(ctx, updateTopic,
 		arg.Name,
+		arg.ClearDept,
 		arg.DeptID,
+		arg.ClearPriority,
 		arg.PriorityID,
 		arg.IsActive,
 		arg.SortOrder,

@@ -85,3 +85,35 @@ func TestDeleteDepartmentForeignKeyViolation(t *testing.T) {
 		t.Fatalf("expected a foreign key violation, got %v", err)
 	}
 }
+
+func TestUpdateDepartmentClearsManager(t *testing.T) {
+	ctx := context.Background()
+	tx := testutil.Tx(t)
+	svc := NewService(tx)
+	d, err := svc.Create(ctx, CreateInput{Name: "Billing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := db.New(tx).CreateStaff(ctx, db.CreateStaffParams{Username: "m", Email: "m@x.test", PasswordHash: "h", IsActive: true, PrimaryDeptID: d.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := svc.Update(ctx, d.ID, UpdateInput{ManagerID: &st.ID})
+	if err != nil || set.ManagerID == nil || *set.ManagerID != st.ID {
+		t.Fatalf("set manager: %+v %v", set, err)
+	}
+	// An absent manager leaves it unchanged.
+	name := "Billing 2"
+	kept, err := svc.Update(ctx, d.ID, UpdateInput{Name: &name})
+	if err != nil || kept.ManagerID == nil || *kept.ManagerID != st.ID {
+		t.Fatalf("absent manager changed it: %+v %v", kept, err)
+	}
+	cleared, err := svc.Update(ctx, d.ID, UpdateInput{ClearManager: true})
+	if err != nil || cleared.ManagerID != nil {
+		t.Fatalf("clear manager: %+v %v", cleared, err)
+	}
+	got, err := svc.Get(ctx, d.ID)
+	if err != nil || got.ManagerID != nil || got.Name != name {
+		t.Fatalf("row after clear: %+v %v", got, err)
+	}
+}

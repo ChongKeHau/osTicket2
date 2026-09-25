@@ -14,7 +14,7 @@ INSERT INTO department (name, is_public, manager_id) VALUES ($1, $2, $3) RETURNI
 UPDATE department
 SET name = COALESCE(sqlc.narg('name'), name),
     is_public = COALESCE(sqlc.narg('is_public'), is_public),
-    manager_id = COALESCE(sqlc.narg('manager_id'), manager_id),
+    manager_id = CASE WHEN @clear_manager::boolean THEN NULL ELSE COALESCE(sqlc.narg('manager_id'), manager_id) END,
     updated_at = now()
 WHERE id = @id
 RETURNING *;
