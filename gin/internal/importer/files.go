@@ -70,11 +70,12 @@ func openSourceFile(ctx context.Context, src *Source, f SrcFile, filesDir string
 }
 
 func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *Report, store attachment.Storage, filesDir string) error {
-	// claimed tracks, for each source file id that has been copied at least once,
-	// the target entry id of the entry that first claimed it. attachment has a
-	// UNIQUE index on file_id, so a source file attached to a second, different
-	// entry needs its own file row and its own copy of the bytes.
-	claimed := map[int64]int64{}
+	// claimed tracks, for each source file id, every target entry that already
+	// has its own copy of it (target entry id -> target file id). attachment has
+	// a UNIQUE index on file_id, so a source file attached to a second, different
+	// entry needs its own file row and its own copy of the bytes; the same
+	// (file, entry) pair seen again is a duplicate attachment row.
+	claimed := map[int64]map[int64]int64{}
 	// Files that could not be copied, so later attachments of the same file skip with the same reason.
 	failed := map[int64]string{}
 	entryStaff := map[int64]*int64{}
@@ -148,49 +149,38 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 			rep.Skip(EntityAttachments, a.FileID, reason)
 			return nil
 		}
-
-		var targetFileID int64
-		firstEntry, imported := claimed[a.FileID]
-		switch {
-		case !imported:
-			// First time this source file is attached to any imported entry.
-			rep.Read(EntityFiles)
-			id, reason, err := copyFile(ctx, src, w, rep, store, filesDir, a, entryStaff[entryID])
-			if err != nil {
-				return err
-			}
-			if reason != "" {
-				failed[a.FileID] = reason
-				rep.Skip(EntityFiles, a.FileID, reason)
-				rep.Skip(EntityAttachments, a.FileID, reason)
-				return nil
-			}
-			lk.Files[a.FileID] = id
-			claimed[a.FileID] = entryID
-			rep.Written(EntityFiles)
-			targetFileID = id
-		case firstEntry == entryID:
-			// Same file, same entry again: attachment's PK is (thread_entry_id, file_id).
+		if _, ok := claimed[a.FileID][entryID]; ok {
+			// Same source file, same entry again: attachment's PK is (thread_entry_id, file_id).
 			rep.Note(EntityAttachments, a.FileID, fmt.Sprintf("duplicate attachment on entry %d", a.EntryID))
 			return nil
-		default:
-			// Same source file, a different entry: attachment.file_id is UNIQUE, so this
-			// entry needs its own copy of the file.
-			rep.Read(EntityFiles)
-			id, reason, err := copyFile(ctx, src, w, rep, store, filesDir, a, entryStaff[entryID])
-			if err != nil {
-				return err
-			}
-			if reason != "" {
-				rep.Skip(EntityAttachments, a.FileID, reason)
-				return nil
-			}
-			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("copied again for entry %d", a.EntryID))
-			rep.Written(EntityFiles)
-			targetFileID = id
 		}
 
-		attachments = append(attachments, []any{entryID, targetFileID, a.Inline})
+		// A source file's first claimant keeps the original copy; every later,
+		// different entry needs its own copy, since attachment.file_id is UNIQUE.
+		first := len(claimed[a.FileID]) == 0
+		rep.Read(EntityFiles)
+		id, reason, err := copyFile(ctx, src, w, rep, store, filesDir, a, entryStaff[entryID])
+		if err != nil {
+			return err
+		}
+		if reason != "" {
+			failed[a.FileID] = reason
+			rep.Skip(EntityFiles, a.FileID, reason)
+			rep.Skip(EntityAttachments, a.FileID, reason)
+			return nil
+		}
+		if first {
+			lk.Files[a.FileID] = id
+		} else {
+			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("copied again for entry %d", a.EntryID))
+		}
+		rep.Written(EntityFiles)
+		if claimed[a.FileID] == nil {
+			claimed[a.FileID] = map[int64]int64{}
+		}
+		claimed[a.FileID][entryID] = id
+
+		attachments = append(attachments, []any{entryID, id, a.Inline})
 		rep.Written(EntityAttachments)
 		return nil
 	})

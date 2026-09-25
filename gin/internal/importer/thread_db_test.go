@@ -2,9 +2,11 @@ package importer
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/grandpine/ticket-api/internal/attachment"
@@ -141,18 +143,20 @@ func TestImportFilesWithoutFilesDir(t *testing.T) {
 
 // TestImportFilesSharedAcrossEntries checks that a source file attached to two
 // different entries gets a second file row and a second copy of the bytes,
-// since attachment has a UNIQUE index on file_id (one file row per attachment).
+// since attachment has a UNIQUE index on file_id (one file row per attachment);
+// a further attachment of that same (file, entry) pair is still a duplicate,
+// not a third copy.
 func TestImportFilesSharedAcrossEntries(t *testing.T) {
 	sink, src, lk, rep := setupThroughTickets(t)
 	ctx := context.Background()
 	if err := sink.Step(ctx, func(w *Writer) error { return importEntries(ctx, src, w, lk, rep) }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := src.db.ExecContext(ctx, "INSERT INTO ost_attachment (id, object_id, type, file_id, inline) VALUES (8, 8, 'H', 1, 0)"); err != nil {
+	if _, err := src.db.ExecContext(ctx, "INSERT INTO ost_attachment (id, object_id, type, file_id, inline) VALUES (8, 8, 'H', 1, 0), (9, 8, 'H', 1, 0)"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := src.db.ExecContext(context.Background(), "DELETE FROM ost_attachment WHERE id = 8"); err != nil {
+		if _, err := src.db.ExecContext(context.Background(), "DELETE FROM ost_attachment WHERE id IN (8, 9)"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -200,5 +204,15 @@ func TestImportFilesSharedAcrossEntries(t *testing.T) {
 	}
 	if rep.Counter(EntityFiles).Written != 3 {
 		t.Fatalf("files written = %d, want 3", rep.Counter(EntityFiles).Written)
+	}
+	found := false
+	want := fmt.Sprintf("duplicate attachment on entry %d", lk.Entries[8])
+	for _, s := range rep.Counter(EntityAttachments).Samples {
+		if strings.Contains(s.Reason, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a duplicate-attachment note for entry %d, samples = %+v", lk.Entries[8], rep.Counter(EntityAttachments).Samples)
 	}
 }
