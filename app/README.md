@@ -20,6 +20,9 @@ Sign in with an account created by `go run ./cmd/api create-admin` or `POST /sta
     npm run lint
     npm run build        # type-check and bundle to dist/
 
+In production, serve `dist/` and the API's `/api` from the same origin (or behind one reverse
+proxy), with SPA history fallback to `index.html`; the `/api` proxy exists only under `npm run dev`.
+
 ## Layout
 
 `src/api` is the only code that talks to the network (typed client with refresh-on-401).

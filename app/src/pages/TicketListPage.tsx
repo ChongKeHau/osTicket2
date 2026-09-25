@@ -37,11 +37,12 @@ export function TicketListPage() {
               <thead>
                 <tr>
                   <th>Number</th><th>Subject</th><th>Requester</th><th>Department</th><th>Status</th>
-                  <th>{sortLabel('priority', 'Priority')}</th><th>Assignee</th><th>{sortLabel('last_message_at', 'Last message')}</th>
+                  <th>{sortLabel('priority', 'Priority')}</th><th>Assignee</th>
+                  <th>{sortLabel('created_at', 'Created')}</th><th>{sortLabel('last_message_at', 'Last message')}</th>
                 </tr>
               </thead>
               <tbody>
-                {q.data.items.length === 0 && <tr><td colSpan={8} className="muted">No tickets match.</td></tr>}
+                {q.data.items.length === 0 && <tr><td colSpan={9}className="muted">No tickets match.</td></tr>}
                 {q.data.items.map((t) => <TicketRow key={t.id} ticket={t} />)}
               </tbody>
             </table>

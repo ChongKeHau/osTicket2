@@ -44,6 +44,11 @@ test('sort header toggles direction', async () => {
   await waitFor(() => expect(lastQuery.get('sort')).toBe('priority'))
   await userEvent.click(screen.getByRole('button', { name: /priority/i }))
   await waitFor(() => expect(lastQuery.get('sort')).toBe('-priority'))
+  await userEvent.click(screen.getByRole('button', { name: /^created/i }))
+  await waitFor(() => expect(lastQuery.get('sort')).toBe('created_at'))
+  expect(screen.getByRole('button', { name: /^created/i })).toHaveTextContent('Created ↑')
+  await userEvent.click(screen.getByRole('button', { name: /^created/i }))
+  await waitFor(() => expect(lastQuery.get('sort')).toBe('-created_at'))
 })
 
 test('pagination requests the next page', async () => {

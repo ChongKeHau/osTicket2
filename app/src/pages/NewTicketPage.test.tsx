@@ -1,9 +1,9 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
 import { REFRESH_KEY } from '../api/client'
-import { referenceFixtures, ticketFixture } from '../test/fixtures'
+import { referenceFixtures, staffProfileFixture, ticketFixture } from '../test/fixtures'
 import { renderWithProviders } from '../test/render'
 import { server } from '../test/setup'
 
@@ -13,6 +13,7 @@ test('topic pre-fills department and priority; submit navigates to the new ticke
   let body: unknown
   server.use(http.post('/api/v1/tickets', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...ticketFixture, id: 8, number: '000008', subject: 'Refund please' }, { status: 201 }) }))
   server.use(http.get('/api/v1/tickets/8', () => HttpResponse.json({ ...ticketFixture, id: 8, number: '000008', subject: 'Refund please' })))
+  server.use(http.get('/api/v1/me', () => HttpResponse.json({ ...staffProfileFixture, department_ids: [1, 2] })))
   renderWithProviders(<App />, { route: '/tickets/new' })
   await userEvent.selectOptions(await screen.findByLabelText(/^topic$/i), '2')
   expect(screen.getByLabelText(/^department$/i)).toHaveValue('2')
@@ -28,6 +29,18 @@ test('topic pre-fills department and priority; submit navigates to the new ticke
     topic_id: 2, dept_id: 2, priority_id: 3, source: 'phone', file_ids: [],
   }))
   expect(await screen.findByRole('heading', { name: /000008/ })).toBeInTheDocument()
+})
+
+test('department lists only departments the agent can use; an unusable topic default is ignored', async () => {
+  // Default profile: non-admin, department_ids [1].
+  renderWithProviders(<App />, { route: '/tickets/new' })
+  const dept = await screen.findByLabelText(/^department$/i)
+  expect(within(dept).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose…', 'Support'])
+  await userEvent.selectOptions(screen.getByLabelText(/^topic$/i), '2') // Refunds defaults to Billing (2)
+  expect(dept).toHaveValue('0')
+  expect(screen.getByLabelText(/^priority$/i)).toHaveValue('3')
+  await userEvent.selectOptions(screen.getByLabelText(/^topic$/i), '1') // General Inquiry defaults to Support (1)
+  expect(dept).toHaveValue('1')
 })
 
 test('validation errors map to fields', async () => {

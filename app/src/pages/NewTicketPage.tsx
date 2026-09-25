@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { listDepartments, listPriorities, listTopics } from '../api/reference'
 import { createTicket } from '../api/tickets'
 import type { CreateTicketInput } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FileUpload, type PendingFile } from '../components/FileUpload'
 import { LoadingScreen } from '../components/LoadingScreen'
@@ -14,6 +15,7 @@ const SOURCES = ['web', 'phone', 'api', 'other'] as const
 export function NewTicketPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { isAdmin, departmentIds } = useAuth()
   // This page only consumes topics/departments/priorities, so it queries just those three
   // (not the full useReferenceData bundle, which also fetches statuses/staff) — a failure on an
   // endpoint this page never uses (e.g. /staff, /statuses) must not block the form. Same query
@@ -28,6 +30,7 @@ export function NewTicketPage() {
   const refQueries = [topicsQ, departmentsQ, prioritiesQ]
   const topics = topicsQ.data ?? []
   const departments = departmentsQ.data ?? []
+  const visibleDepts = departments.filter((d) => isAdmin || departmentIds.includes(d.id))
   const priorities = prioritiesQ.data ?? []
   const isLoading = refQueries.some((q) => q.isLoading)
   const refError = refQueries.find((q) => q.error)?.error ?? null
@@ -44,7 +47,9 @@ export function NewTicketPage() {
 
   function onTopic(id: number) {
     const t = topics.find((x) => x.id === id)
-    setForm((f) => ({ ...f, topic_id: id, dept_id: t?.dept_id ?? f.dept_id, priority_id: t?.priority_id ?? f.priority_id }))
+    // Keep the current department when the topic's default is not one this agent may use.
+    const dept = t && visibleDepts.some((d) => d.id === t.dept_id) ? t.dept_id : undefined
+    setForm((f) => ({ ...f, topic_id: id, dept_id: dept ?? f.dept_id, priority_id: t?.priority_id ?? f.priority_id }))
   }
 
   function submit(e: FormEvent) {
@@ -81,7 +86,7 @@ export function NewTicketPage() {
         {field('topic', 'Topic', <select id="topic" value={form.topic_id} onChange={(e) => onTopic(Number(e.target.value))}>
           <option value={0}>None</option>{topics.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>, fields.topic_id)}
         {field('dept', 'Department', <select id="dept" value={form.dept_id} onChange={(e) => setForm({ ...form, dept_id: Number(e.target.value) })}>
-          <option value={0}>Choose…</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>, fields.dept_id)}
+          <option value={0}>Choose…</option>{visibleDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>, fields.dept_id)}
         {field('priority', 'Priority', <select id="priority" value={form.priority_id} onChange={(e) => setForm({ ...form, priority_id: Number(e.target.value) })}>
           <option value={0}>Default</option>{priorities.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>, fields.priority_id)}
         {field('source', 'Source', <select id="source" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>

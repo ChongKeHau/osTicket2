@@ -13,6 +13,7 @@ export function TicketRow({ ticket: t }: { ticket: Ticket }) {
       <td><StatusBadge state={t.state} name={t.status.name} /></td>
       <td>{t.priority.name}</td>
       <td>{t.assignee?.name ?? <span className="muted">Unassigned</span>}</td>
+      <td>{formatDateTime(t.created_at)}</td>
       <td>{formatDateTime(t.last_message_at)}</td>
     </tr>
   )

@@ -18,5 +18,6 @@ export async function downloadFile(id: number, name: string): Promise<void> {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  // Some browsers start the download asynchronously; revoking right away can cancel it.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
