@@ -127,13 +127,22 @@ func (s *Sender) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// cycleTimeout bounds one batch once it is detached from the loop context.
+const cycleTimeout = 2 * time.Minute
+
+// cycle runs one batch on a context detached from the loop's: cancelling the
+// loop (shutdown) must not roll back MarkOutboxSent for mail SMTP has already
+// accepted, which would send it again on the next start. The loop context only
+// decides whether another cycle starts.
 func (s *Sender) cycle(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.log.Error("email sender panic", "panic", fmt.Sprint(r))
 		}
 	}()
-	if _, _, err := s.RunOnce(ctx); err != nil && ctx.Err() == nil {
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), cycleTimeout)
+	defer cancel()
+	if _, _, err := s.RunOnce(work); err != nil {
 		s.log.Warn("email sender cycle failed", "err", err)
 	}
 }

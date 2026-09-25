@@ -121,7 +121,12 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 			mailH.Mount(private)
 		},
 	})
-	waitMail := startMailLoops(ctx, cfg, pool, store, notifier)
+	// The mail loops get their own cancel so every return path below (bind
+	// failure, Shutdown error, normal exit) stops them and waits before run's
+	// deferred pool.Close.
+	mailCtx, cancelMail := context.WithCancel(ctx)
+	waitMail := startMailLoops(mailCtx, cfg, pool, store, notifier)
+	defer func() { cancelMail(); waitMail() }()
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port), Handler: engine,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -148,7 +153,6 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	if err := <-done; err != nil {
 		return err
 	}
-	waitMail()
 	return nil
 }
 

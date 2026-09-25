@@ -236,3 +236,66 @@ func TestClaimOutboxSkipsLockedRows(t *testing.T) {
 		t.Fatal("second claim blocked instead of skipping locked rows")
 	}
 }
+
+// cancelOnSend cancels the loop context from inside every Send, simulating
+// SIGTERM arriving while a batch is in flight.
+type cancelOnSend struct {
+	flakyTransport
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnSend) Open(context.Context) (Session, error) { return c, nil }
+
+func (c *cancelOnSend) Send(ctx context.Context, from, to string, raw []byte) error {
+	c.cancel()
+	return c.flakyTransport.Send(ctx, from, to, raw)
+}
+
+func TestSenderRunFinishesBatchWhenCancelledMidSend(t *testing.T) {
+	tx := testutil.Tx(t)
+	q := db.New(tx)
+	tid := newTicket(t, q)
+	ids := []int64{queueOne(t, q, tid, "a@example.test"), queueOne(t, q, tid, "b@example.test")}
+	loop, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tr := &cancelOnSend{cancel: cancel}
+	s := NewSender(tx, tr, Address{Name: "Desk", Address: "desk@example.test"}, 20)
+	done := make(chan struct{})
+	go func() { s.Run(loop, time.Hour); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+	if tr.calls != 2 {
+		t.Fatalf("sends = %d, want 2 (the whole batch)", tr.calls)
+	}
+	for _, id := range ids {
+		row, err := q.GetOutbox(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.Status != db.EmailStatusSent || row.SentAt == nil || row.Attempts != 1 {
+			t.Fatalf("row %d = %+v, want sent after one attempt", id, row)
+		}
+	}
+}
+
+func TestSenderCycleRunsWithCancelledLoopContext(t *testing.T) {
+	tx := testutil.Tx(t)
+	q := db.New(tx)
+	tid := newTicket(t, q)
+	id := queueOne(t, q, tid, "a@example.test")
+	loop, cancel := context.WithCancel(context.Background())
+	cancel()
+	tr := &flakyTransport{}
+	s := NewSender(tx, tr, Address{Name: "Desk", Address: "desk@example.test"}, 20)
+	s.cycle(loop)
+	row, err := q.GetOutbox(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.calls != 1 || row.Status != db.EmailStatusSent || row.Attempts != 1 {
+		t.Fatalf("calls = %d, row = %+v, want sent", tr.calls, row)
+	}
+}
