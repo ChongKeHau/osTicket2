@@ -1,0 +1,13 @@
+From: Mail Delivery System <MAILER-DAEMON@mx.example.test>
+To: desk@example.test
+Subject: Undelivered Mail Returned to Sender
+Date: Thu, 25 Sep 2026 12:40:00 +0000
+Message-ID: <bounce-1@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="rep"
+
+--rep
+Content-Type: text/plain
+
+Delivery failed.
+--rep--

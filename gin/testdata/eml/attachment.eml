@@ -1,0 +1,25 @@
+From: pat@example.test
+To: desk@example.test
+Subject: Photo attached
+Date: Thu, 25 Sep 2026 12:00:00 +0000
+Message-ID: <att-1@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: text/plain; charset=utf-8
+
+See attached.
+--mix
+Content-Type: image/png; name="pixel.png"
+Content-Disposition: attachment; filename="pixel.png"
+Content-Transfer-Encoding: base64
+
+UE5HIQ==
+--mix
+Content-Type: application/pdf; name="big.pdf"
+Content-Disposition: attachment; filename="big.pdf"
+Content-Transfer-Encoding: base64
+
+QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=
+--mix--

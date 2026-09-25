@@ -3,6 +3,7 @@ module github.com/grandpine/ticket-api
 go 1.26.0
 
 require (
+	github.com/emersion/go-message v0.18.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/go-sql-driver/mysql v1.10.1

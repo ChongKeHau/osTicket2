@@ -1,0 +1,19 @@
+From: pat@example.test
+To: desk@example.test
+Subject: Re: [#100001] Printer on fire
+Date: Thu, 25 Sep 2026 11:00:00 +0000
+Message-ID: <alt-1@example.test>
+In-Reply-To: <ticket-1-abcdef123456@example.test>
+References: <ticket-1-abcdef123456@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Still burning.
+--alt
+Content-Type: text/html; charset=utf-8
+
+<p>Still <i>burning</i>.</p>
+--alt--
