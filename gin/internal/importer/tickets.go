@@ -124,7 +124,11 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 	rows.Close()
 
 	now := time.Now()
-	var batch [][]any
+	batch := w.NewBatcher("ticket", []string{
+		"id", "number", "subject", "status_id", "dept_id", "topic_id", "priority_id", "assigned_staff_id",
+		"requester_name", "requester_email", "source", "is_answered", "due_at", "closed_at", "last_message_at",
+		"extra", "created_at", "updated_at",
+	})
 	err = src.Tickets(ctx, func(tk SrcTicket) error {
 		rep.Read(EntityTickets)
 		if lk.DeletedStatus[tk.StatusID] {
@@ -150,7 +154,9 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 			assignee = &s
 		}
 		answers := forms[tk.ID]
-		subject := strings.TrimSpace(answers["subject"].Value)
+		var tc textCleaner
+		tk.Number = tc.clean(tk.Number)
+		subject := strings.TrimSpace(tc.clean(answers["subject"].Value))
 		if subject == "" {
 			subject = "(no subject)"
 			rep.Note(EntityTickets, tk.ID, "empty subject")
@@ -176,10 +182,14 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 		if placeholder {
 			rep.Note(EntityTickets, tk.ID, "requester email replaced with "+email)
 		}
+		email = tc.clean(email)
 		name := ""
 		if u, ok := users[tk.UserID]; ok {
-			name = u.Name
+			name = tc.clean(u.Name)
 		}
+		// extra is jsonb, which also rejects NUL.
+		tk.IPAddress, tk.SourceExtra = tc.clean(tk.IPAddress), tc.clean(tk.SourceExtra)
+		tc.note(rep, EntityTickets, tk.ID)
 		extra, err := ticketExtra(tk)
 		if err != nil {
 			return err
@@ -187,20 +197,15 @@ func importTickets(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 		id := lk.allocID("ticket", tk.ID)
 		lk.Tickets[tk.ID] = id
 		created := orZero(tk.Created, now)
-		batch = append(batch, []any{
+		rep.Written(EntityTickets)
+		return batch.Add(ctx, []any{
 			id, number, subject, status, dept, topic, priority, assignee, name, email, mapSource(tk.Source),
 			tk.IsAnswered, nullTime(tk.DueDate), nullTime(tk.Closed), orZero(tk.LastUpdate, created), extra,
 			created, orZero(tk.Updated, created),
 		})
-		rep.Written(EntityTickets)
-		return nil
 	})
 	if err != nil {
 		return err
 	}
-	return w.Insert(ctx, "ticket", []string{
-		"id", "number", "subject", "status_id", "dept_id", "topic_id", "priority_id", "assigned_staff_id",
-		"requester_name", "requester_email", "source", "is_answered", "due_at", "closed_at", "last_message_at",
-		"extra", "created_at", "updated_at",
-	}, batch)
+	return batch.Flush(ctx)
 }

@@ -41,7 +41,9 @@ func importStatuses(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep
 			rep.Skip(EntityStatuses, st.ID, ReasonDeletedStatus)
 			continue
 		}
-		name := strings.TrimSpace(st.Name)
+		var tc textCleaner
+		name := strings.TrimSpace(tc.clean(st.Name))
+		tc.note(rep, EntityStatuses, st.ID)
 		key := strings.ToLower(name)
 		if id, ok := seed[key]; ok {
 			lk.Statuses[st.ID] = id

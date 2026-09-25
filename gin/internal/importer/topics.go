@@ -22,7 +22,9 @@ func importTopics(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *
 	var batch [][]any
 	for _, tp := range items {
 		rep.Read(EntityTopics)
-		name := strings.TrimSpace(tp.Name)
+		var tc textCleaner
+		name := strings.TrimSpace(tc.clean(tp.Name))
+		tc.note(rep, EntityTopics, tp.ID)
 		if id, ok := seed[strings.ToLower(name)]; ok {
 			lk.Topics[tp.ID] = id
 			rep.Merged(EntityTopics)

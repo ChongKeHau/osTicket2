@@ -121,11 +121,13 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 		if size != a.File.Size {
 			rep.Note(EntityFiles, a.FileID, fmt.Sprintf("size %d differs from source %d", size, a.File.Size))
 		}
-		name := strings.TrimSpace(a.File.Name)
+		var tc textCleaner
+		name := strings.TrimSpace(tc.clean(a.File.Name))
 		if name == "" {
 			name = key
 		}
-		mime := a.File.Type
+		mime := tc.clean(a.File.Type)
+		tc.note(rep, EntityFiles, a.FileID)
 		if mime == "" {
 			mime = "application/octet-stream"
 		}
@@ -137,7 +139,7 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 		return id, "", nil
 	}
 
-	var attachments [][]any
+	attachments := w.NewBatcher("attachment", []string{"thread_entry_id", "file_id", "inline"})
 	err = src.Attachments(ctx, func(a SrcAttachment) error {
 		rep.Read(EntityAttachments)
 		entryID, ok := lk.Entries[a.EntryID]
@@ -180,12 +182,11 @@ func importFiles(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 		}
 		claimed[a.FileID][entryID] = id
 
-		attachments = append(attachments, []any{entryID, id, a.Inline})
 		rep.Written(EntityAttachments)
-		return nil
+		return attachments.Add(ctx, []any{entryID, id, a.Inline})
 	})
 	if err != nil {
 		return err
 	}
-	return w.Insert(ctx, "attachment", []string{"thread_entry_id", "file_id", "inline"}, attachments)
+	return attachments.Flush(ctx)
 }

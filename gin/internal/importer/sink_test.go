@@ -3,6 +3,8 @@ package importer
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/grandpine/ticket-api/internal/db/testutil"
@@ -155,5 +157,90 @@ func TestResetSequences(t *testing.T) {
 	}
 	if id != 1 {
 		t.Fatalf("file id = %d, want 1", id)
+	}
+}
+
+func TestBatcherFlushesEveryBatch(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	s := NewSink(tx, 2, false)
+	err := s.Step(ctx, func(w *Writer) error {
+		b := w.NewBatcher("department", []string{"id", "name"})
+		count := func() int {
+			var n int
+			if err := w.QueryRow(ctx, "SELECT count(*) FROM department WHERE id BETWEEN 80 AND 84").Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		for i := int64(80); i < 84; i++ {
+			if err := b.Add(ctx, []any{i, fmt.Sprintf("Dept %d", i)}); err != nil {
+				return err
+			}
+		}
+		// Two full batches were flushed before the fifth row arrives.
+		if n := count(); n != 4 {
+			t.Fatalf("rows before fifth Add = %d, want 4", n)
+		}
+		if err := b.Add(ctx, []any{int64(84), "Dept 84"}); err != nil {
+			return err
+		}
+		if n := count(); n != 4 {
+			t.Fatalf("rows after fifth Add = %d, want 4 (held until Flush)", n)
+		}
+		if err := b.Flush(ctx); err != nil {
+			return err
+		}
+		if n := count(); n != 5 {
+			t.Fatalf("rows after Flush = %d, want 5", n)
+		}
+		// Flushing an empty batcher is a no-op.
+		return b.Flush(ctx)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChunkSizeCapsParameters(t *testing.T) {
+	cases := []struct{ batch, cols, want int }{
+		{500, 3, 500},
+		{1000000, 3, 21845},
+		{100000, 18, 3640},
+		{2, 65536, 1},
+	}
+	for _, c := range cases {
+		if got := chunkSize(c.batch, c.cols); got != c.want {
+			t.Errorf("chunkSize(%d, %d) = %d, want %d", c.batch, c.cols, got, c.want)
+		}
+	}
+}
+
+func TestSinkInsertHugeBatch(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	s := NewSink(tx, 1_000_000, false)
+	if err := s.Step(ctx, func(w *Writer) error {
+		return w.Insert(ctx, "department", []string{"id", "name", "is_public"}, [][]any{{int64(95), "Ninety-five", true}, {int64(96), "Ninety-six", false}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := tx.QueryRow(ctx, "SELECT count(*) FROM department WHERE id IN (95, 96)").Scan(&n); err != nil || n != 2 {
+		t.Fatalf("count = %d, %v", n, err)
+	}
+}
+
+func TestSinkInsertErrorNamesRows(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	s := NewSink(tx, 2, false)
+	err := s.Step(ctx, func(w *Writer) error {
+		return w.Insert(ctx, "department", []string{"id", "name"}, [][]any{
+			{int64(53), "A"}, {int64(54), "B"}, {int64(55), "C"}, {int64(53), "Again"},
+		})
+	})
+	if err == nil || !strings.Contains(err.Error(), "insert department rows 55-53") {
+		t.Fatalf("err = %v, want it to name rows 55-53", err)
 	}
 }

@@ -36,6 +36,9 @@ func importDepartmentsPass1(ctx context.Context, src *Source, w *Writer, lk *Loo
 	var batch [][]any
 	for _, d := range items {
 		rep.Read(EntityDepartments)
+		var tc textCleaner
+		d.Name = tc.clean(d.Name)
+		tc.note(rep, EntityDepartments, d.ID)
 		trimmed := strings.TrimSpace(d.Name)
 		if id, ok := seed[strings.ToLower(trimmed)]; ok {
 			lk.Departments[d.ID] = id

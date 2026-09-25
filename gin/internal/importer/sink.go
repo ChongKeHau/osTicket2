@@ -82,13 +82,30 @@ func (s *Sink) Close(ctx context.Context) error {
 	return err
 }
 
+// maxParams is Postgres's limit on bind parameters in one statement.
+const maxParams = 65535
+
+// chunkSize is the number of rows per INSERT: the batch size, capped so one
+// statement never exceeds maxParams bind parameters.
+func chunkSize(batch, cols int) int {
+	return max(1, min(batch, maxParams/max(cols, 1)))
+}
+
+// rowLabel names a row in an error: its first value when that is an id, else its index.
+func rowLabel(row []any, index int) any {
+	if len(row) > 0 {
+		if id, ok := row[0].(int64); ok {
+			return id
+		}
+	}
+	return index
+}
+
 // Insert writes rows with explicit ids in batches.
 func (w *Writer) Insert(ctx context.Context, table string, cols []string, rows [][]any) error {
-	for start := 0; start < len(rows); start += w.batch {
-		end := start + w.batch
-		if end > len(rows) {
-			end = len(rows)
-		}
+	size := chunkSize(w.batch, len(cols))
+	for start := 0; start < len(rows); start += size {
+		end := min(start+size, len(rows))
 		chunk := rows[start:end]
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "INSERT INTO %s (%s) OVERRIDING SYSTEM VALUE VALUES ", table, strings.Join(cols, ", "))
@@ -111,10 +128,43 @@ func (w *Writer) Insert(ctx context.Context, table string, cols []string, rows [
 			sb.WriteString(")")
 		}
 		if _, err := w.tx.Exec(ctx, sb.String(), args...); err != nil {
-			return fmt.Errorf("insert %s: %w", table, err)
+			return fmt.Errorf("insert %s rows %v-%v: %w", table, rowLabel(chunk[0], start), rowLabel(chunk[len(chunk)-1], end-1), err)
 		}
 	}
 	return nil
+}
+
+// Batcher accumulates rows and flushes them through Insert every batch rows,
+// so a step streaming a large source table holds at most one batch in memory.
+type Batcher struct {
+	w     *Writer
+	table string
+	cols  []string
+	rows  [][]any
+}
+
+// NewBatcher returns a Batcher that inserts into table's cols.
+func (w *Writer) NewBatcher(table string, cols []string) *Batcher {
+	return &Batcher{w: w, table: table, cols: cols}
+}
+
+// Add queues a row and flushes when a full batch is queued.
+func (b *Batcher) Add(ctx context.Context, row []any) error {
+	b.rows = append(b.rows, row)
+	if len(b.rows) >= b.w.batch {
+		return b.Flush(ctx)
+	}
+	return nil
+}
+
+// Flush inserts the queued rows. It is a no-op when none are queued.
+func (b *Batcher) Flush(ctx context.Context) error {
+	if len(b.rows) == 0 {
+		return nil
+	}
+	err := b.w.Insert(ctx, b.table, b.cols, b.rows)
+	b.rows = b.rows[:0]
+	return err
 }
 
 func (w *Writer) Exec(ctx context.Context, sql string, args ...any) error {

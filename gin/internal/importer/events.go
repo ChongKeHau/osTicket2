@@ -41,7 +41,7 @@ func importEvents(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *
 		return err
 	}
 	now := time.Now()
-	var batch [][]any
+	batch := w.NewBatcher("ticket_event", []string{"id", "ticket_id", "staff_id", "kind", "data", "created_at"})
 	err = src.Events(ctx, func(e SrcEvent) error {
 		rep.Read(EntityEvents)
 		if e.Annulled {
@@ -53,24 +53,27 @@ func importEvents(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *
 			rep.Skip(EntityEvents, e.ID, "ticket not imported")
 			return nil
 		}
-		kind, payload, ok := mapEvent(e.Name, e.Data)
+		data, changed := cleanText(e.Data)
+		kind, payload, ok := mapEvent(e.Name, data)
 		if !ok {
 			rep.Skip(EntityEvents, e.ID, "unmapped event "+e.Name)
 			return nil
+		}
+		if changed {
+			rep.Note(EntityEvents, e.ID, "text sanitised")
 		}
 		var staff *int64
 		if s, ok := lk.Staff[e.StaffID]; ok {
 			staff = &s
 		}
 		id := lk.allocID("ticket_event", e.ID)
-		batch = append(batch, []any{id, ticketID, staff, kind, payload, orZero(e.Timestamp, now)})
 		rep.Written(EntityEvents)
-		return nil
+		return batch.Add(ctx, []any{id, ticketID, staff, kind, payload, orZero(e.Timestamp, now)})
 	})
 	if err != nil {
 		return err
 	}
-	return w.Insert(ctx, "ticket_event", []string{"id", "ticket_id", "staff_id", "kind", "data", "created_at"}, batch)
+	return batch.Flush(ctx)
 }
 
 // setLastResponse derives last_response_at from the newest response entry of each ticket.

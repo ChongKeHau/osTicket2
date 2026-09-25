@@ -35,7 +35,7 @@ func importEntries(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 	var links []parentLink
 	entryThread := map[int64]int64{} // target entry id → source thread id
 	now := time.Now()
-	var batch [][]any
+	batch := w.NewBatcher("thread_entry", []string{"id", "ticket_id", "type", "staff_id", "poster", "title", "body", "format", "created_at", "updated_at"})
 	err = src.Entries(ctx, func(e SrcEntry) error {
 		rep.Read(EntityEntries)
 		srcTicket, ok := threads[e.ThreadID]
@@ -57,10 +57,13 @@ func importEntries(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 		if s, ok := lk.Staff[e.StaffID]; ok {
 			staff = &s
 		}
+		var tc textCleaner
 		var title *string
-		if t := strings.TrimSpace(e.Title); t != "" {
+		if t := strings.TrimSpace(tc.clean(e.Title)); t != "" {
 			title = &t
 		}
+		poster, body := tc.clean(e.Poster), tc.clean(e.Body)
+		tc.note(rep, EntityEntries, e.ID)
 		id := lk.allocID("thread_entry", e.ID)
 		lk.Entries[e.ID] = id
 		entryThread[id] = e.ThreadID
@@ -68,14 +71,13 @@ func importEntries(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep 
 			links = append(links, parentLink{child: id, parent: e.PID, thread: e.ThreadID})
 		}
 		created := orZero(e.Created, now)
-		batch = append(batch, []any{id, ticketID, kind, staff, e.Poster, title, e.Body, mapFormat(e.Format), created, orZero(e.Updated, created)})
 		rep.Written(EntityEntries)
-		return nil
+		return batch.Add(ctx, []any{id, ticketID, kind, staff, poster, title, body, mapFormat(e.Format), created, orZero(e.Updated, created)})
 	})
 	if err != nil {
 		return err
 	}
-	if err := w.Insert(ctx, "thread_entry", []string{"id", "ticket_id", "type", "staff_id", "poster", "title", "body", "format", "created_at", "updated_at"}, batch); err != nil {
+	if err := batch.Flush(ctx); err != nil {
 		return err
 	}
 	// Second pass: parents may have higher ids than their children, so link after all rows exist.

@@ -18,7 +18,7 @@ func setupThroughTickets(t *testing.T) (*Sink, *Source, *Lookup, *Report) {
 	tx := testutil.Tx(t)
 	ctx := context.Background()
 	src := openTestSource(t)
-	sink := NewSink(tx, 3, false)
+	sink := NewSink(tx, 2, false) // small batches exercise the multi-flush paths
 	lk, rep := NewLookup(), NewReport()
 	runReferenceSteps(t, sink, src, lk, rep)
 	if err := sink.Step(ctx, func(w *Writer) error { return importTickets(ctx, src, w, lk, rep) }); err != nil {
@@ -57,6 +57,51 @@ func TestImportEntriesParentLinks(t *testing.T) {
 	var title *string
 	if err = sink.db.QueryRow(ctx, "SELECT staff_id, title FROM thread_entry WHERE id = $1", lk.Entries[3]).Scan(&staff, &title); err != nil || staff == nil || *staff != lk.Staff[1] || title == nil || *title != "Ops note" {
 		t.Fatalf("entry 3 = %v %v, %v", staff, title, err)
+	}
+}
+
+// TestImportEntriesSanitisesText checks that a NUL byte and an invalid UTF-8
+// byte in a MySQL body, which Postgres text rejects, are cleaned and noted
+// rather than aborting the step.
+func TestImportEntriesSanitisesText(t *testing.T) {
+	sink, src, lk, rep := setupThroughTickets(t)
+	ctx := context.Background()
+	// A utf8mb4 text column refuses 0xFF in strict mode, so the body column is
+	// made binary for this test (as in installs whose data bypassed the
+	// charset) and restored afterwards.
+	if _, err := src.db.ExecContext(ctx, "ALTER TABLE ost_thread_entry MODIFY body MEDIUMBLOB NOT NULL"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if _, err := src.db.ExecContext(ctx, "DELETE FROM ost_thread_entry WHERE id = 50"); err != nil {
+			t.Error(err)
+		}
+		if _, err := src.db.ExecContext(ctx, "ALTER TABLE ost_thread_entry MODIFY body text NOT NULL"); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := src.db.ExecContext(ctx, "INSERT INTO ost_thread_entry (id,pid,thread_id,staff_id,user_id,type,flags,poster,source,title,body,format,ip_address,created,updated) VALUES (50,0,30,0,0,'M',0,'Poster','Web',NULL,CONCAT('bad', CHAR(0), 'byte', UNHEX('FF')),'text','','2020-01-13 12:00:00','2020-01-13 12:00:00')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Step(ctx, func(w *Writer) error { return importEntries(ctx, src, w, lk, rep) }); err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	if err := sink.db.QueryRow(ctx, "SELECT body FROM thread_entry WHERE id = $1", lk.Entries[50]).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body != "badbyte�" {
+		t.Fatalf("body = %q, want %q", body, "badbyte�")
+	}
+	found := false
+	for _, s := range rep.Counter(EntityEntries).Samples {
+		if s.ID == 50 && s.Reason == "text sanitised" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a text-sanitised note for entry 50, samples = %+v", rep.Counter(EntityEntries).Samples)
 	}
 }
 

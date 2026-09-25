@@ -54,6 +54,10 @@ func importStaff(ctx context.Context, src *Source, w *Writer, lk *Lookup, rep *R
 	var batch [][]any
 	for _, st := range items {
 		rep.Read(EntityStaff)
+		var tc textCleaner
+		st.Username, st.Email = tc.clean(st.Username), tc.clean(st.Email)
+		st.FirstName, st.LastName = tc.clean(st.FirstName), tc.clean(st.LastName)
+		tc.note(rep, EntityStaff, st.ID)
 		email, replaced := staffEmail(st.Username, st.Email, taken)
 		if replaced {
 			rep.Note(EntityStaff, st.ID, "email replaced with "+email)
