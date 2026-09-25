@@ -1,32 +1,27 @@
-# React + TypeScript + Vite
+# Ticket Desk (React frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Agent UI for the Go ticket API in `../gin`. See
+`docs/superpowers/specs/2026-09-25-react-agent-frontend-design.md` for the design.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Start the API first (see `../gin/README.md`; it listens on :8080), then:
 
-## React Compiler
+    npm install
+    npm run dev          # http://localhost:5173, proxies /api to :8080
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+If port 5173 is already in use, override it: `npm run dev -- --port <n>`.
 
-## Expanding the Oxlint configuration
+Sign in with an account created by `go run ./cmd/api create-admin` or `POST /staff`.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Scripts
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+    npm test             # Vitest + Testing Library + MSW, headless
+    npm run lint
+    npm run build        # type-check and bundle to dist/
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Layout
+
+`src/api` is the only code that talks to the network (typed client with refresh-on-401).
+`src/auth` owns the session. `src/pages` are routes; `src/components` are shared pieces;
+`src/hooks` wrap TanStack Query and URL state.

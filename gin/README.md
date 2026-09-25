@@ -58,3 +58,5 @@ run `docker compose down -v` to drop the volume and start clean.
 `cmd/api` entrypoint; `internal/<feature>` packages each with `handler.go` and
 `service.go`; `internal/db` is sqlc output plus pool and transaction helpers;
 `db/migrations` is owned by Flyway.
+
+The React frontend lives in ../app (see its README).
