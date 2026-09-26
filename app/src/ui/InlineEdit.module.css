@@ -1,0 +1,5 @@
+.trigger { border: 1px dashed transparent; background: transparent; padding: 1px 4px; border-radius: var(--radius); cursor: pointer; text-align: left; color: inherit; }
+.trigger:hover { border-color: var(--border-strong); background: var(--accent-bg); }
+.pencil { color: var(--text-muted); font-size: 12px; }
+.editor { display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.error { color: var(--danger); font-size: 13px; }

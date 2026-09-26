@@ -1,0 +1,16 @@
+.wrap { overflow-x: auto; }
+.table { width: 100%; border: 1px solid var(--border); }
+.table th { text-align: left; background: var(--page-bg); border-bottom: 1px solid var(--border-strong); padding: 6px 8px; font-weight: 700; white-space: nowrap; }
+.table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tbody tr { position: relative; }
+.table tbody tr:nth-child(odd) td { background: var(--zebra); }
+.table tbody tr:hover td { background: var(--row-hover); }
+.right { text-align: right; }
+.sortBtn { border: 0; background: transparent; padding: 0; cursor: pointer; font-weight: 700; color: inherit; }
+.arrowOn { color: var(--accent); font-size: 10px; }
+.arrowOff { color: var(--border-strong); font-size: 10px; }
+.rowLink { color: inherit; font-weight: 700; }
+.rowLink::after { content: ""; position: absolute; inset: 0; }
+.linkRow td :is(a, button, select, input):not(.rowLink) { position: relative; z-index: 1; }
+.empty { text-align: center; color: var(--text-muted); padding: var(--space-5) !important; }
+.footer { background: var(--page-bg); padding: var(--space-2) var(--space-3) !important; }
