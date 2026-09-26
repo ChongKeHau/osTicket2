@@ -20,6 +20,7 @@ import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
 import { PortalAuthProvider } from './portal/PortalAuthContext'
 import { PortalShell } from './portal/PortalShell'
+import { ProfilePage as PortalProfilePage } from './portal/pages/ProfilePage'
 import { TicketListPage as PortalTicketListPage } from './portal/pages/TicketListPage'
 import { TicketPage as PortalTicketPage } from './portal/pages/TicketPage'
 import { RequirePortalAccount } from './portal/RequirePortalAccount'
@@ -50,7 +51,7 @@ function PortalApp() {
           <Route path="tickets/:id" element={<PortalTicketPage />} />
           <Route element={<RequirePortalAccount />}>
             <Route path="tickets" element={<PortalTicketListPage />} />
-            <Route path="profile" element={<h2>Profile</h2>} />
+            <Route path="profile" element={<PortalProfilePage />} />
           </Route>
         </Route>
         <Route path="*" element={<h2>Page not found</h2>} />
