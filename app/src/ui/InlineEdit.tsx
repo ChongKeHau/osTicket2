@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from './Button'
 import { errorMessage } from './Banner'
 import s from './InlineEdit.module.css'
@@ -10,6 +10,7 @@ export function InlineEdit({ label, value, editor, onSave, disabled }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const container = useRef<HTMLDivElement>(null)
   const wasOpen = useRef(false)
   const close = () => { setOpen(false); setError(null) }
   const save = async () => {
@@ -19,15 +20,15 @@ export function InlineEdit({ label, value, editor, onSave, disabled }: Props) {
     finally { setSaving(false) }
   }
   useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close() } }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    if (open) container.current?.querySelector<HTMLElement>('input,select,textarea,button')?.focus()
   }, [open])
   useEffect(() => {
     if (wasOpen.current && !open) trigger.current?.focus()
     wasOpen.current = open
   }, [open])
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close() }
+  }
   if (!open) {
     const isString = typeof value === 'string'
     return (
@@ -39,7 +40,7 @@ export function InlineEdit({ label, value, editor, onSave, disabled }: Props) {
     )
   }
   return (
-    <div className={s.editor}>
+    <div className={s.editor} ref={container} onKeyDown={onKey}>
       {editor({ close })}
       <Button variant="primary" size="sm" disabled={saving} onClick={save}>Save</Button>
       <Button size="sm" disabled={saving} onClick={close}>Cancel</Button>

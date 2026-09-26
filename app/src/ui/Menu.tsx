@@ -9,6 +9,7 @@ export function Menu({ label, items, variant = 'default', align = 'right' }: { l
   const [cursor, setCursor] = useState(-1)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const itemRefs = useRef<(HTMLLIElement | null)[]>([])
   const id = useId()
 
   useEffect(() => {
@@ -17,6 +18,10 @@ export function Menu({ label, items, variant = 'default', align = 'right' }: { l
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
+
+  useEffect(() => {
+    if (open && cursor >= 0) itemRefs.current[cursor]?.focus()
+  }, [open, cursor])
 
   const close = (restore: boolean) => { setOpen(false); setCursor(-1); if (restore) trigger.current?.focus() }
   const enabled = items.map((it, i) => (it.disabled ? -1 : i)).filter((i) => i >= 0)
@@ -29,7 +34,7 @@ export function Menu({ label, items, variant = 'default', align = 'right' }: { l
   const select = (i: number) => { const it = items[i]; if (!it || it.disabled) return; close(true); it.onSelect() }
   const onKey = (e: KeyboardEvent) => {
     if (!open) { if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); setCursor(enabled[0] ?? -1) } return }
-    if (e.key === 'Escape') { e.preventDefault(); close(true) }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true) }
     else if (e.key === 'ArrowDown') { e.preventDefault(); move(1) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1) }
     else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(cursor) }
@@ -42,7 +47,7 @@ export function Menu({ label, items, variant = 'default', align = 'right' }: { l
       {open && (
         <ul role="menu" id={id} className={`${s.menu} ${align === 'left' ? s.left : s.right}`}>
           {items.map((it, i) => (
-            <li key={it.label} role="menuitem" aria-disabled={it.disabled || undefined} tabIndex={-1}
+            <li key={it.label} ref={(el) => { itemRefs.current[i] = el }} id={`${id}-item-${i}`} role="menuitem" aria-disabled={it.disabled || undefined} tabIndex={-1}
               className={[s.item, it.danger && s.danger, i === cursor && s.cursor, it.disabled && s.disabled].filter(Boolean).join(' ')}
               onMouseEnter={() => !it.disabled && setCursor(i)} onClick={() => select(i)}>{it.label}</li>
           ))}

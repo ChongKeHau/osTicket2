@@ -25,3 +25,28 @@ it('stays open and shows the error when save rejects', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('nope')
   expect(screen.getByLabelText('p')).toBeInTheDocument()
 })
+
+it('moves focus into the editor on open', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined)
+  render(<InlineEdit label="Status" value="Open" editor={() => <select aria-label="Status editor"><option>Open</option></select>} onSave={onSave} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Status: Open' }))
+  expect(screen.getByLabelText('Status editor')).toHaveFocus()
+})
+
+it('Escape in one open editor closes only that editor', async () => {
+  const onSaveA = vi.fn().mockResolvedValue(undefined)
+  const onSaveB = vi.fn().mockResolvedValue(undefined)
+  render(
+    <>
+      <InlineEdit label="A" value="x" editor={() => <input aria-label="A editor" />} onSave={onSaveA} />
+      <InlineEdit label="B" value="y" editor={() => <input aria-label="B editor" />} onSave={onSaveB} />
+    </>,
+  )
+  await userEvent.click(screen.getByRole('button', { name: 'A: x' }))
+  await userEvent.click(screen.getByRole('button', { name: 'B: y' }))
+  expect(screen.getByLabelText('A editor')).toBeInTheDocument()
+  expect(screen.getByLabelText('B editor')).toBeInTheDocument()
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByLabelText('B editor')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('A editor')).toBeInTheDocument()
+})

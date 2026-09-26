@@ -17,6 +17,17 @@ it('renders sections, required markers and errors', () => {
   expect(screen.getByText('*')).toBeInTheDocument()
 })
 
+it('describes a help-only control without marking it invalid', () => {
+  render(
+    <FormTable sections={[{ title: 'Settings', rows: [
+      { id: 'pub', label: 'Public', help: 'Visible to users', control: <input id="pub" type="checkbox" /> },
+    ] }]} />,
+  )
+  const control = screen.getByLabelText('Public')
+  expect(control).toHaveAttribute('aria-describedby', 'pub-help')
+  expect(control).not.toHaveAttribute('aria-invalid')
+})
+
 it('renders form actions', () => {
   render(<MemoryRouter><FormActions saving cancelTo="/admin/departments" onReset={() => {}} /></MemoryRouter>)
   expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled()

@@ -1,4 +1,4 @@
-.bar { background: var(--panel-bg); border-bottom: 1px solid var(--border); }
+.bar { background: var(--page-bg); border-bottom: 1px solid var(--border); }
 .inner { margin: 0 auto; padding: 0 var(--space-4); max-width: var(--content-max); display: flex; align-items: center; min-height: 36px; }
 .list { list-style: none; margin: 0; padding: 0; display: flex; gap: var(--space-4); }
 .item { display: block; padding: var(--space-2) 0; color: var(--text-muted); }
