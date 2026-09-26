@@ -36,13 +36,15 @@ export const portalFixtures = { profile, session, guestSession, reference, ticke
 const P = '/api/v1/portal'
 const unauthorized = () => HttpResponse.json({ error: { code: 'unauthorized', message: 'authentication required' } }, { status: 401 })
 const notFound = () => HttpResponse.json({ error: { code: 'not_found', message: 'ticket not found' } }, { status: 404 })
-const accepted = () => new HttpResponse(null, { status: 202 })
+// The API answers 202/201 with an empty JSON object, not an empty body.
+const accepted = () => HttpResponse.json({}, { status: 202 })
 const noContent = () => new HttpResponse(null, { status: 204 })
 
 const exchanges: Record<string, PortalSession> = {
   'good-signin': { ...session, kind: 'signin' },
   'good-access': { ...guestSession, kind: 'access' },
-  'good-confirm': { ...session, kind: 'confirm' },
+  // Like reset, a confirm session only sets the first password: no refresh token.
+  'good-confirm': { ...session, access_token: 'paccess-confirm', refresh_token: '', kind: 'confirm' },
   // A reset session may only set a password: no refresh token, so it cannot survive a reload.
   'good-reset': { ...session, access_token: 'paccess-reset', refresh_token: '', kind: 'reset' },
 }
@@ -62,7 +64,11 @@ export const portalHandlers = [
     if (s) return HttpResponse.json(s)
     return HttpResponse.json({ error: { code: 'token_invalid', message: 'this link is invalid or has expired' } }, { status: 410 })
   }),
-  http.post(`${P}/auth/register`, () => new HttpResponse(null, { status: 201 })),
+  http.post(`${P}/auth/register`, async ({ request }) => {
+    const body = (await request.json()) as { email: string; name: string }
+    if (body.email === profile.email) return HttpResponse.json({ error: { code: 'conflict', message: 'email already registered' } }, { status: 409 })
+    return HttpResponse.json({}, { status: 201 })
+  }),
   http.post(`${P}/auth/refresh`, async ({ request }) => {
     const { refresh_token: rt } = (await request.json()) as { refresh_token: string }
     if (rt.startsWith('prefresh-guest')) return HttpResponse.json({ ...guestSession, access_token: 'paccess-guest-2', refresh_token: 'prefresh-guest-2' })

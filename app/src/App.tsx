@@ -22,7 +22,11 @@ import { PortalAuthProvider } from './portal/PortalAuthContext'
 import { PortalShell } from './portal/PortalShell'
 import { TicketOpenedPage } from './portal/pages/CheckEmailPage'
 import { LandingPage } from './portal/pages/LandingPage'
+import { LoginPage as PortalLoginPage } from './portal/pages/LoginPage'
 import { OpenTicketPage } from './portal/pages/OpenTicketPage'
+import { RegisterPage } from './portal/pages/RegisterPage'
+import { ResetPage } from './portal/pages/ResetPage'
+import { TokenPage } from './portal/pages/TokenPage'
 import { RequirePortalAccount } from './portal/RequirePortalAccount'
 import { RequirePortalUser } from './portal/RequirePortalUser'
 import { AppShell } from './ui/AppShell'
@@ -44,10 +48,10 @@ function PortalApp() {
         <Route index element={<LandingPage />} />
         <Route path="open" element={<OpenTicketPage />} />
         <Route path="opened/:number" element={<TicketOpenedPage />} />
-        <Route path="login" element={<h2>Sign In</h2>} />
-        <Route path="register" element={<h2>Register</h2>} />
-        <Route path="reset" element={<h2>Reset</h2>} />
-        <Route path="t/:token" element={<h2>Token</h2>} />
+        <Route path="login" element={<PortalLoginPage />} />
+        <Route path="register" element={<RegisterPage />} />
+        <Route path="reset" element={<ResetPage />} />
+        <Route path="t/:token" element={<TokenPage />} />
         <Route element={<RequirePortalUser />}>
           <Route path="tickets/:id" element={<h2>Ticket</h2>} />
           <Route element={<RequirePortalAccount />}>

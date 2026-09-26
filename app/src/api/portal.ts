@@ -35,7 +35,8 @@ export async function exchange(token: string): Promise<PortalSession> {
   return s
 }
 
-export function register(input: { email: string; name: string; password: string }): Promise<void> {
+/** Creates an unverified account; the emailed confirm link then lets the customer set a password. */
+export function register(input: { email: string; name: string }): Promise<void> {
   return portal.request<void>('POST', '/auth/register', { body: input })
 }
 
