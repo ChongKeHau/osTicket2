@@ -106,7 +106,10 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	dashH := dashboard.NewHandler(dashboard.NewService(pool))
 	notifier, renderer := buildMail(cfg)
 	ticketH := ticket.NewHandler(ticket.NewService(pool, ticket.WithNotifier(notifier)))
-	mailH := mail.NewHandler(pool, renderer)
+	mailH := mail.NewHandler(pool, renderer, mail.WithExposeLinks(cfg.MailExposeLinks))
+	if cfg.MailExposeLinks {
+		slog.Warn("MAIL_EXPOSE_LINKS=true: admins can read live portal sign-in links in the outbox; dev and e2e only")
+	}
 	fileSvc := attachment.NewService(pool, store, cfg.MaxUploadBytes, cfg.AllowedMIME)
 	fileH := attachment.NewHandler(fileSvc, cfg.MaxUploadBytes)
 

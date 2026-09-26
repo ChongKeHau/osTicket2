@@ -29,20 +29,26 @@ It opens a ticket anonymously (choosing the first department), asks for a guest 
 reloading until the row `[#n] Access link for Portal walk ticket` appears (the API queues
 account mail in the background after answering 202). The row's subject opens the message
 page, whose first `<pre>` is the text body; the walk takes the `…/portal/t/<token>` link from
-it and follows it as the customer, then replies and closes the ticket.
+it and follows it as the customer, reloads the page (the guest session must survive a reload),
+then replies and closes the ticket.
 
-So the API must run with mail **enabled** (a disabled notifier queues nothing) and
-`APP_BASE_URL` set to the app's origin. No mail has to be delivered: point SMTP and IMAP at a
-closed local port and the rows stay `pending` while the sender retries, e.g.
+So the API must run with mail **enabled** (a disabled notifier queues nothing),
+`APP_BASE_URL` set to the app's origin, and **`MAIL_EXPOSE_LINKS=true`**: by default the admin
+outbox shows `client_*` links as `/portal/t/[redacted]`, and the walk cannot follow those.
+`MAIL_EXPOSE_LINKS` is for development and this walk only; never set it on a real deployment
+(it lets every admin sign in as any customer who was mailed a link). No mail has to be
+delivered: point SMTP and IMAP at a closed local port and the rows stay `pending` while the
+sender retries, e.g.
 
     MAIL_ENABLED=true MAIL_FROM="Desk <desk@example.test>" SMTP_PASSWORD=x \
     SMTP_HOST=127.0.0.1 SMTP_PORT=2525 SMTP_TLS=none \
     IMAP_HOST=127.0.0.1 IMAP_PORT=1143 IMAP_TLS=none \
-    APP_BASE_URL=http://localhost:5173 go run ./cmd/api
+    APP_BASE_URL=http://localhost:5173 MAIL_EXPOSE_LINKS=true go run ./cmd/api
 
-(the sender and poller log connection errors; that is expected). Anonymous opens are limited
-to 10 an hour per IP, so more than ten runs an hour against one API process will fail at
-`08-portal-opened` until the window passes or the API restarts.
+(the sender and poller log connection errors, and the API warns that links are exposed; both
+are expected). Ticket opens are limited to 10 an hour per IP, so more than ten runs an hour
+against one API process will fail at `08-portal-opened` until the window passes or the API
+restarts.
 
 ## Run
 

@@ -91,8 +91,16 @@ for (let i = 0; ; i++) {
 }
 await accessRow.first().click()
 const body = await page.locator('pre').first().textContent()
-const link = body.match(/https?:\S+\/portal\/t\/[0-9a-f]+/)[0]
-await portal.goto(link)
+const found = body.match(/https?:\S+\/portal\/t\/[0-9a-f]+/)
+if (!found) {
+  throw new Error(body.includes('[redacted]')
+    ? 'the outbox redacts portal links: start the API with MAIL_EXPOSE_LINKS=true (see README)'
+    : 'no portal link in the access mail')
+}
+await portal.goto(found[0])
+await portal.getByRole('heading', { name: /Portal walk ticket/ }).waitFor()
+// The guest session survives a reload (the link itself is spent by now).
+await portal.reload()
 await portal.getByRole('heading', { name: /Portal walk ticket/ }).waitFor()
 await shotP('09-portal-ticket')
 await portal.getByLabel('Reply', { exact: true }).fill('Customer reply from the walk')

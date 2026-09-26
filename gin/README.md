@@ -77,6 +77,7 @@ run `docker compose down -v` to drop the volume and start clean.
 | MAX_UPLOAD_BYTES | 10485760 | per file |
 | ALLOWED_MIME | images, pdf, text, csv, zip, office | comma-separated |
 | APP_BASE_URL | none | public origin of the web app, e.g. `https://desk.example.com`; portal links (`${APP_BASE_URL}/portal/t/<token>`) are built from it whether or not mail is on; required when `MAIL_ENABLED=true` |
+| MAIL_EXPOSE_LINKS | false | **dev/e2e only.** `true` shows portal links in `client_*` outbox mail unredacted to admins (see Email), which lets any admin sign in as that customer; the e2e walk needs it. Never set it in production; the API logs a warning at start when it is on |
 
 ## Email
 
@@ -123,7 +124,10 @@ Admin API (admin staff only): `GET /api/v1/email/templates`,
 `GET /api/v1/email/outbox?status=`, `GET /api/v1/email/outbox/:id` (one row plus its
 `body_text` and `body_html`), `POST /api/v1/email/outbox/:id/retry`,
 `GET /api/v1/email/inbound`. An outbox row's `ticket_id` is `null` for account mail (confirm,
-sign-in and reset links).
+sign-in and reset links). In `client_*` rows every `/portal/t/<token>` link is shown as
+`/portal/t/[redacted]` (bodies and subject, list and detail): those links sign the customer
+in, so an admin reading the outbox must not be able to use them. The stored row is not
+changed; the mail still goes out with the live link.
 
 ## Customer portal
 

@@ -3,6 +3,8 @@ package mail
 import (
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/apperr"
@@ -14,11 +16,39 @@ import (
 
 // Handler exposes the admin mail API.
 type Handler struct {
-	db db.Beginner
-	r  *Renderer
+	db          db.Beginner
+	r           *Renderer
+	exposeLinks bool
 }
 
-func NewHandler(b db.Beginner, r *Renderer) *Handler { return &Handler{db: b, r: r} }
+// HandlerOption configures NewHandler.
+type HandlerOption func(*Handler)
+
+// WithExposeLinks shows portal links in client_* outbox mail unredacted
+// (MAIL_EXPOSE_LINKS; dev and e2e only).
+func WithExposeLinks(v bool) HandlerOption { return func(h *Handler) { h.exposeLinks = v } }
+
+func NewHandler(b db.Beginner, r *Renderer, opts ...HandlerOption) *Handler {
+	h := &Handler{db: b, r: r}
+	for _, o := range opts {
+		o(h)
+	}
+	return h
+}
+
+// portalLink matches the token in a portal one-time link (/portal/t/<token>).
+var portalLink = regexp.MustCompile(`(/portal/t/)[A-Za-z0-9_-]+`)
+
+// redact hides the token in every portal link of a client_* message: those
+// links sign the recipient in, so an admin reading the outbox must not be able
+// to follow them. Other templates, and every message when exposeLinks is set,
+// are returned as stored.
+func (h *Handler) redact(templateKey, s string) string {
+	if h.exposeLinks || !strings.HasPrefix(templateKey, "client_") {
+		return s
+	}
+	return portalLink.ReplaceAllString(s, "${1}[redacted]")
+}
 
 func (h *Handler) Mount(private *gin.RouterGroup) {
 	admin := private.Group("", auth.RequireAdmin())
@@ -164,7 +194,11 @@ func (h *Handler) listOutbox(c *gin.Context) {
 	}
 	items := make([]outboxJSON, 0, len(rows))
 	for _, r := range rows {
-		items = append(items, toOutboxJSON(r))
+		// The list carries no bodies; the subject is redacted like them in case
+		// a template puts a link there.
+		j := toOutboxJSON(r)
+		j.Subject = h.redact(r.TemplateKey, j.Subject)
+		items = append(items, j)
 	}
 	c.JSON(http.StatusOK, httpx.List[outboxJSON]{Items: items, Page: page.Page, PageSize: page.PageSize, Total: total})
 }
@@ -201,7 +235,9 @@ func (h *Handler) getOutbox(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, outboxDetailJSON{outboxJSON: toOutboxJSON(db.ListOutboxRow{ID: row.ID, TicketID: row.TicketID, EntryID: row.EntryID, TemplateKey: row.TemplateKey, ToAddress: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Status: row.Status, Attempts: row.Attempts, LastError: row.LastError, NextAttemptAt: row.NextAttemptAt, SentAt: row.SentAt, CreatedAt: row.CreatedAt}), BodyText: row.BodyText, BodyHTML: row.BodyHtml})
+	j := toOutboxJSON(db.ListOutboxRow{ID: row.ID, TicketID: row.TicketID, EntryID: row.EntryID, TemplateKey: row.TemplateKey, ToAddress: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Status: row.Status, Attempts: row.Attempts, LastError: row.LastError, NextAttemptAt: row.NextAttemptAt, SentAt: row.SentAt, CreatedAt: row.CreatedAt})
+	j.Subject = h.redact(row.TemplateKey, j.Subject)
+	c.JSON(http.StatusOK, outboxDetailJSON{outboxJSON: j, BodyText: h.redact(row.TemplateKey, row.BodyText), BodyHTML: h.redact(row.TemplateKey, row.BodyHtml)})
 }
 
 func (h *Handler) retry(c *gin.Context) {

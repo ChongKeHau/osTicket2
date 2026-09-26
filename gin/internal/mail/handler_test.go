@@ -164,3 +164,65 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// Portal links in client_* mail are account keys: the admin outbox shows them
+// with the token redacted unless the API runs with MAIL_EXPOSE_LINKS=true.
+func TestOutboxRedactsPortalLinks(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	link := "https://desk.example.test/portal/t/" + token
+	mk := func(key string) int64 {
+		t.Helper()
+		mid, _ := NewMessageID(nil, "example.test")
+		id, err := q.CreateOutbox(ctx, db.CreateOutboxParams{
+			TemplateKey: key, ToAddress: "pat@example.test", Subject: "Your link",
+			BodyHtml: `<p><a href="` + link + `">Sign in</a></p>`, BodyText: "Sign in: " + link + "\nThanks", MessageID: mid,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	signin, other := mk("client_signin"), mk("ticket_reply")
+	type detail struct {
+		BodyText string `json:"body_text"`
+		BodyHTML string `json:"body_html"`
+	}
+	get := func(e *gin.Engine, id int64) detail {
+		t.Helper()
+		w := do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), "")
+		if w.Code != 200 {
+			t.Fatalf("detail %d = %d %s", id, w.Code, w.Body)
+		}
+		var d detail
+		if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	admin := auth.Principal{StaffID: 1, IsAdmin: true}
+
+	e := adminRouter(NewHandler(tx, NewRenderer(time.Minute)), admin)
+	d := get(e, signin)
+	if strings.Contains(d.BodyText+d.BodyHTML, token) {
+		t.Fatalf("token exposed by default: %+v", d)
+	}
+	if d.BodyText != "Sign in: https://desk.example.test/portal/t/[redacted]\nThanks" ||
+		d.BodyHTML != `<p><a href="https://desk.example.test/portal/t/[redacted]">Sign in</a></p>` {
+		t.Fatalf("redacted bodies: %+v", d)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox?status=pending", ""); w.Code != 200 || strings.Contains(w.Body.String(), token) {
+		t.Fatalf("list = %d %s", w.Code, w.Body)
+	}
+	// Only client_* templates carry account links; other mail is shown as stored.
+	if d := get(e, other); !strings.Contains(d.BodyText, token) {
+		t.Fatalf("non-client mail altered: %+v", d)
+	}
+
+	e = adminRouter(NewHandler(tx, NewRenderer(time.Minute), WithExposeLinks(true)), admin)
+	if d := get(e, signin); !strings.Contains(d.BodyText, link) || !strings.Contains(d.BodyHTML, link) {
+		t.Fatalf("MAIL_EXPOSE_LINKS=true still redacts: %+v", d)
+	}
+}

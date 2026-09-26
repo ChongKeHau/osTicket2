@@ -119,3 +119,19 @@ func TestLoadAppBaseURL(t *testing.T) {
 		t.Fatalf("mail on, bad url: %v", err)
 	}
 }
+
+func TestLoadMailExposeLinks(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "JWT_SECRET": strings.Repeat("s", 32)}
+	cfg, err := Load(env(base))
+	if err != nil || cfg.MailExposeLinks {
+		t.Fatalf("default: %v %v", cfg.MailExposeLinks, err)
+	}
+	base["MAIL_EXPOSE_LINKS"] = "true"
+	if cfg, err = Load(env(base)); err != nil || !cfg.MailExposeLinks {
+		t.Fatalf("true: %v %v", cfg.MailExposeLinks, err)
+	}
+	base["MAIL_EXPOSE_LINKS"] = "yes please"
+	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "MAIL_EXPOSE_LINKS") {
+		t.Fatalf("bad value: %v", err)
+	}
+}

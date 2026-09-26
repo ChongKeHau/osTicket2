@@ -28,7 +28,11 @@ type Config struct {
 	// web app. Portal links (${AppBaseURL}/portal/t/<token>) are built from it
 	// whether or not mail is enabled; mail requires it.
 	AppBaseURL string
-	Mail       MailConfig
+	// MailExposeLinks (MAIL_EXPOSE_LINKS, default false) shows portal links in
+	// client_* outbox mail unredacted to admins. Dev/e2e only: those links sign
+	// the recipient in.
+	MailExposeLinks bool
+	Mail            MailConfig
 }
 
 // MailConfig holds outbound SMTP and inbound IMAP settings. Zero when mail is disabled.
@@ -116,6 +120,13 @@ func Load(getenv func(string) string) (Config, error) {
 		} else {
 			cfg.AppBaseURL = v
 		}
+	}
+	if v := getenv("MAIL_EXPOSE_LINKS"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("MAIL_EXPOSE_LINKS %q must be true or false", v))
+		}
+		cfg.MailExposeLinks = b
 	}
 	errs = append(errs, loadMail(&cfg.Mail, getenv)...)
 	return cfg, errors.Join(errs...)
