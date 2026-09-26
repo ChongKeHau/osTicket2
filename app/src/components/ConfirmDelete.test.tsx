@@ -53,3 +53,13 @@ test('a rejected onConfirm resets to the initial state and disables buttons whil
   reject(new Error('conflict'))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Sales' })).toBeInTheDocument())
 })
+
+test('startConfirming opens on Confirm/Cancel and Cancel calls onCancel', async () => {
+  const onCancel = vi.fn()
+  const onConfirm = vi.fn(() => Promise.resolve())
+  render(<ConfirmDelete label="Sales" onConfirm={onConfirm} startConfirming onCancel={onCancel} />)
+  expect(screen.queryByRole('button', { name: 'Delete Sales' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel delete Sales' }))
+  expect(onCancel).toHaveBeenCalledTimes(1)
+  expect(onConfirm).not.toHaveBeenCalled()
+})

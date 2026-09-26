@@ -20,7 +20,6 @@ const LEGACY = new Set([
   'components/ThreadEntry.module.css',
   'components/TicketHeader.module.css',
   'pages/TicketListPage.module.css',
-  'pages/admin/admin.module.css',
 ])
 
 describe('css modules use tokens', () => {
