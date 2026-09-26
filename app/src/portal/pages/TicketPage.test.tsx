@@ -124,6 +124,18 @@ it('offers Reopen on a closed ticket and notes that replying reopens it', async 
   expect(reopened).toBe(1)
 })
 
+it('treats a resolved ticket as closed: Reopen, no Close, and the reopen note', async () => {
+  server.use(http.get(`${P}/tickets/7`, () => HttpResponse.json({ ...portalFixtures.ticket, state: 'resolved', status: { id: 2, name: 'Resolved' } })))
+  let reopened = 0
+  server.use(http.post(`${P}/tickets/7/reopen`, () => { reopened++; return HttpResponse.json(portalFixtures.ticket) }))
+  mount()
+  expect(await screen.findByText(/Replying will reopen this ticket/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Close ticket' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Reopen' }))
+  expect(await screen.findByText('Ticket reopened')).toBeInTheDocument()
+  expect(reopened).toBe(1)
+})
+
 it('lets a guest session view and reply without a My Tickets link', async () => {
   let replied = false
   server.use(http.post(`${P}/tickets/7/reply`, () => { replied = true; return new HttpResponse(null, { status: 204 }) }))

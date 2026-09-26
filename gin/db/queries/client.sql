@@ -49,18 +49,21 @@ UPDATE ticket SET user_id = $2 WHERE id = $1 AND user_id IS NULL;
 UPDATE ticket SET user_id = $2 WHERE id = $1;
 
 -- name: ListPortalTickets :many
+-- The portal treats resolved like closed: state 'closed' lists both.
 SELECT t.id, t.number, t.subject, t.status_id, s.name AS status_name, s.state, d.name AS dept_name,
        t.created_at, t.last_message_at, t.closed_at
 FROM ticket t JOIN ticket_status s ON s.id = t.status_id JOIN department d ON d.id = t.dept_id
 WHERE t.user_id = @user_id
-  AND (sqlc.narg('state')::text IS NULL OR s.state::text = sqlc.narg('state'))
+  AND (sqlc.narg('state')::text IS NULL OR s.state::text = sqlc.narg('state')
+       OR (sqlc.narg('state') = 'closed' AND s.state = 'resolved'))
 ORDER BY t.last_message_at DESC, t.id DESC
 LIMIT @lim OFFSET @off;
 
 -- name: CountPortalTickets :one
 SELECT count(*) FROM ticket t JOIN ticket_status s ON s.id = t.status_id
 WHERE t.user_id = @user_id
-  AND (sqlc.narg('state')::text IS NULL OR s.state::text = sqlc.narg('state'));
+  AND (sqlc.narg('state')::text IS NULL OR s.state::text = sqlc.narg('state')
+       OR (sqlc.narg('state') = 'closed' AND s.state = 'resolved'));
 
 -- name: GetPortalTicket :one
 SELECT t.id, t.number, t.subject, t.user_id, t.status_id, s.name AS status_name, s.state, d.name AS dept_name,

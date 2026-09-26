@@ -151,9 +151,9 @@ versa), 15-minute access tokens, rotating refresh tokens stored hashed in
 | `GET reference` | none | public departments, active topics, site name |
 | `POST tickets` | optional | `{name, email, subject, message, format, topic_id?, dept_id?, file_ids?, file_tokens?}` → 201 `{id, number}`; `0` means no topic / department |
 | `POST files` | optional | multipart `file` → file JSON plus `token`, which must be sent back in `file_tokens` |
-| `GET tickets/:id`, `POST tickets/:id/reply`, `GET tickets/:id/files/:fileId` | any (guest: its ticket only) | reply 204; replying to a closed ticket reopens it |
-| `POST tickets/:id/close`, `POST tickets/:id/reopen` | any (guest: its ticket only) | 200 ticket; 409 when already in that state |
-| `GET tickets?state=&page=&page_size=` | account | own tickets; guests get 403 `guest_session` |
+| `GET tickets/:id`, `POST tickets/:id/reply`, `GET tickets/:id/files/:fileId` | any (guest: its ticket only) | reply 204; replying to a closed or resolved ticket reopens it |
+| `POST tickets/:id/close`, `POST tickets/:id/reopen` | any (guest: its ticket only) | 200 ticket; 409 when already in that state (resolved counts as closed) |
+| `GET tickets?state=&page=&page_size=` | account | own tickets; `state=closed` lists resolved tickets too (the portal has no Resolved tab); guests get 403 `guest_session` |
 
 Rate limits (fixed window, 429 with `retry_after`): sign-in, link, reset, access and register
 share 10 a minute per email and per IP; ticket opens 10 an hour per email (the session's

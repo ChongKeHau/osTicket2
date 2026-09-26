@@ -616,6 +616,69 @@ func TestReplyReopensClosedTicket(t *testing.T) {
 	}
 }
 
+func (f *portalFx) resolveByStaff(t *testing.T, id int64) {
+	t.Helper()
+	st, err := f.q.FirstStatusInState(f.ctx, db.TicketStateResolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.tickets.SetStatus(f.ctx, f.staff, id, st.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The portal has Open and Closed only: a resolved ticket is listed under
+// Closed, and a reply or Reopen reopens it; Close on it is a conflict.
+func TestResolvedTicketsBehaveAsClosed(t *testing.T) {
+	f := newPortal(t, 100)
+	a := f.open(t, "ann@x.test", "A")
+	b := f.open(t, "ann@x.test", "B")
+	c := f.open(t, "ann@x.test", "C")
+	f.resolveByStaff(t, b.ID)
+	f.closeByStaff(t, c.ID)
+	ann := f.principal(t, "ann@x.test")
+	ids := func(state string) map[int64]bool {
+		t.Helper()
+		l, err := f.svc.ListTickets(f.ctx, ann, state, httpx.Page{Page: 1, PageSize: 25})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int(l.Total) != len(l.Items) {
+			t.Fatalf("%s: total %d items %d", state, l.Total, len(l.Items))
+		}
+		got := map[int64]bool{}
+		for _, r := range l.Items {
+			got[r.ID] = true
+		}
+		return got
+	}
+	if got := ids("closed"); len(got) != 2 || !got[b.ID] || !got[c.ID] {
+		t.Fatalf("closed tab %v", got)
+	}
+	if got := ids("open"); len(got) != 1 || !got[a.ID] {
+		t.Fatalf("open tab %v", got)
+	}
+	if got := ids("resolved"); len(got) != 1 || !got[b.ID] {
+		t.Fatalf("resolved filter %v", got)
+	}
+
+	if err := f.svc.Reply(f.ctx, ann, b.ID, ReplyInput{Body: "not fixed"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := f.svc.GetTicket(f.ctx, ann, b.ID); err != nil || v.State != "open" {
+		t.Fatalf("after reply to resolved: %+v %v", v, err)
+	}
+
+	f.resolveByStaff(t, a.ID)
+	if _, err := f.svc.Close(f.ctx, ann, a.ID); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("close resolved: %v", err)
+	}
+	v, err := f.svc.Reopen(f.ctx, ann, a.ID)
+	if err != nil || v.State != "open" {
+		t.Fatalf("reopen resolved: %+v %v", v, err)
+	}
+}
+
 func TestCloseAndReopen(t *testing.T) {
 	f := newPortal(t, 100)
 	out := f.open(t, "ann@x.test", "S")

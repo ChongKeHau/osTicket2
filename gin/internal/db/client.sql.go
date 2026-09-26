@@ -88,7 +88,8 @@ func (q *Queries) ConsumeClientToken(ctx context.Context, tokenHash string) (Cli
 const countPortalTickets = `-- name: CountPortalTickets :one
 SELECT count(*) FROM ticket t JOIN ticket_status s ON s.id = t.status_id
 WHERE t.user_id = $1
-  AND ($2::text IS NULL OR s.state::text = $2)
+  AND ($2::text IS NULL OR s.state::text = $2
+       OR ($2 = 'closed' AND s.state = 'resolved'))
 `
 
 type CountPortalTicketsParams struct {
@@ -399,7 +400,8 @@ SELECT t.id, t.number, t.subject, t.status_id, s.name AS status_name, s.state, d
        t.created_at, t.last_message_at, t.closed_at
 FROM ticket t JOIN ticket_status s ON s.id = t.status_id JOIN department d ON d.id = t.dept_id
 WHERE t.user_id = $1
-  AND ($2::text IS NULL OR s.state::text = $2)
+  AND ($2::text IS NULL OR s.state::text = $2
+       OR ($2 = 'closed' AND s.state = 'resolved'))
 ORDER BY t.last_message_at DESC, t.id DESC
 LIMIT $4 OFFSET $3
 `
@@ -424,6 +426,7 @@ type ListPortalTicketsRow struct {
 	ClosedAt      *time.Time
 }
 
+// The portal treats resolved like closed: state 'closed' lists both.
 func (q *Queries) ListPortalTickets(ctx context.Context, arg ListPortalTicketsParams) ([]ListPortalTicketsRow, error) {
 	rows, err := q.db.Query(ctx, listPortalTickets,
 		arg.UserID,

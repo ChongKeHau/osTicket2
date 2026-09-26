@@ -75,6 +75,12 @@ export function TicketPage() {
   )
 }
 
+/** The portal has no Resolved state of its own: a resolved ticket shows and acts as closed
+ *  (Reopen, and a reply reopens it), as the API treats it. */
+function isClosed(ticket: PortalTicket): boolean {
+  return ticket.state === 'closed' || ticket.state === 'resolved'
+}
+
 /** Close (two clicks: "Close ticket", then "Confirm") or Reopen, by the ticket's state. */
 function StatusControl({ ticket }: { ticket: PortalTicket }) {
   const qc = useQueryClient()
@@ -82,7 +88,7 @@ function StatusControl({ ticket }: { ticket: PortalTicket }) {
   const { flash } = useBanner()
   const onError = useActionError(ticket.id)
   const [confirming, setConfirming] = useState(false)
-  const closed = ticket.state === 'closed'
+  const closed = isClosed(ticket)
   const change = useMutation({
     mutationFn: () => (closed ? reopenTicket(ticket.id) : closeTicket(ticket.id)),
     onSuccess: async (updated) => {
@@ -135,7 +141,7 @@ function ReplyForm({ ticket }: { ticket: PortalTicket }) {
       <form onSubmit={(e) => void submit(e)} className={s.replyForm}>
         <label htmlFor="portal-reply">Reply</label>
         <div>
-          {ticket.state === 'closed' && <p className={s.note}>This ticket is closed. Replying will reopen this ticket.</p>}
+          {isClosed(ticket) && <p className={s.note}>This ticket is closed. Replying will reopen this ticket.</p>}
           <textarea id="portal-reply" className={s.textarea} rows={6} value={body} onChange={(e) => setBody(e.target.value)} required />
           {fields.body && <span className="field-error">{fields.body}</span>}
         </div>

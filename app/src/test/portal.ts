@@ -86,7 +86,8 @@ export const portalHandlers = [
   http.get(`${P}/tickets`, ({ request }) => {
     const url = new URL(request.url)
     const state = url.searchParams.get('state')
-    const items = [ticketRow].filter((t) => !state || t.state === state)
+    // Like the API: the Closed tab (state=closed) lists resolved tickets too.
+    const items = [ticketRow].filter((t) => !state || t.state === state || (state === 'closed' && t.state === 'resolved'))
     const page = Number(url.searchParams.get('page') ?? 1)
     const pageSize = Number(url.searchParams.get('page_size') ?? 25)
     return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), page, page_size: pageSize, total: items.length })

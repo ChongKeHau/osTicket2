@@ -408,7 +408,7 @@ func (s *PortalService) Reply(ctx context.Context, p Principal, id int64, in Rep
 		if err != nil {
 			return err
 		}
-		if row.State == db.TicketStateClosed {
+		if closedLike(row.State) {
 			if err := transition(ctx, q, svc, p, id, db.TicketStateOpen); err != nil {
 				return err
 			}
@@ -428,12 +428,21 @@ func (s *PortalService) Reply(ctx context.Context, p Principal, id int64, in Rep
 	})
 }
 
-// Close moves the ticket to the first closed-state status; 409 when it is already closed.
+// closedLike reports whether the portal shows a ticket as closed: it has no
+// Resolved tab or action, so a resolved ticket counts as closed (listed under
+// Closed, reopened by a reply or Reopen, and not closable again).
+func closedLike(st db.TicketState) bool {
+	return st == db.TicketStateClosed || st == db.TicketStateResolved
+}
+
+// Close moves the ticket to the first closed-state status; 409 when it is
+// already closed or resolved.
 func (s *PortalService) Close(ctx context.Context, p Principal, id int64) (*TicketView, error) {
 	return s.setState(ctx, p, id, db.TicketStateClosed)
 }
 
-// Reopen moves a closed ticket to the first open-state status; 409 when it is not closed.
+// Reopen moves a closed or resolved ticket to the first open-state status; 409
+// when it is neither.
 func (s *PortalService) Reopen(ctx context.Context, p Principal, id int64) (*TicketView, error) {
 	return s.setState(ctx, p, id, db.TicketStateOpen)
 }
@@ -448,9 +457,9 @@ func (s *PortalService) setState(ctx context.Context, p Principal, id int64, tar
 			return err
 		}
 		switch {
-		case target == db.TicketStateClosed && row.State == db.TicketStateClosed:
+		case target == db.TicketStateClosed && closedLike(row.State):
 			return fmt.Errorf("%w: ticket is already closed", apperr.ErrConflict)
-		case target == db.TicketStateOpen && row.State != db.TicketStateClosed:
+		case target == db.TicketStateOpen && !closedLike(row.State):
 			return fmt.Errorf("%w: ticket is not closed", apperr.ErrConflict)
 		}
 		svc, err := s.ticketsIn(q)
