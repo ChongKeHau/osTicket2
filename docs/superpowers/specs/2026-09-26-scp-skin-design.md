@@ -91,6 +91,8 @@ page), **Departments** (`/admin/departments`), **Help Topics** (`/admin/topics`)
 (`/admin/staff`), **Email** (`/admin/email/templates`, new). Sub-nav on each list tab holds
 "Add New …" on the right. Email sub-nav: Templates, Outbox, Inbound Log.
 
+> **Amended (as shipped):** admin lists have one "Add New …" control, the green button in the sticky bar; the admin sub-nav right slot is empty.
+
 The header switch links to `/admin/departments` from the agent panel and to `/tickets` from
 the admin panel.
 
@@ -116,6 +118,8 @@ Department, Assigned To (assignee name or "—"). Last Message (`last_message_at
 `last_message_at`, default sort `-last_message_at`). Sort keys are exactly those the API
 accepts; the header click toggles direction. Row click opens `/tickets/:id`. Footer:
 "Showing a–b of n" and `Pagination`. Empty state as in `ListTable`.
+
+> **Amended (as shipped):** the sub-nav active item and the title match on `state` and `assigned_to` only (other params such as `page`, `sort`, `q`, `status`, `dept_id` are ignored).
 
 ### 4.3 Ticket view (`/tickets/:id`)
 
@@ -153,6 +157,8 @@ and a `notice` banner appears. Posting a reply with a status change calls `reply
 `setStatus`, in that order; if the second fails the banner says the reply was posted but
 the status was not changed.
 
+> **Amended (as shipped):** "More → Edit" is replaced by inline edits on the info tables (subject, help topic, priority, due date, department, assignee, status, requester name and email); a reply with a status change sends `status_id` in the single reply call (no partial-failure state); thread entries show the absolute time with the relative time in the tooltip.
+
 ### 4.4 New ticket (`/tickets/new`)
 
 `FormTable` with sections **User Information** (Name, Email required) and **Ticket
@@ -167,6 +173,8 @@ Departments, Help Topics, Staff: `StickyBar` with title and count, an `add` `But
 ("Add New Department" etc.) right, `ListTable` with the current columns made sortable
 client-side (these lists are small and unpaged today; sorting is in-memory), row link to
 the edit form. Delete moves into a per-row **More** `Menu` with the existing confirm dialog.
+
+> **Amended (as shipped):** admin lists have one "Add New …" control, the green button in the sticky bar; the admin sub-nav right slot is empty.
 
 ### 4.6 Admin forms
 
@@ -197,6 +205,8 @@ Validation errors from the API map onto rows by field name as today.
 - Inbound Log (`/admin/email/inbound`): `ListTable` of received, from, subject, outcome
   `Badge`, ticket number (link when present), reason. Paged.
 
+> **Amended (as shipped):** outbox and inbound rows link by ticket id (the API returns no ticket number there); the template form reads from the list query (there is no GET-by-key); the Variables row lists the exported fields of `mail.Vars`.
+
 ### 4.8 Dashboard (`/dashboard`)
 
 Top: period form — Start date (date input, default today minus period) and Period select
@@ -206,6 +216,8 @@ lines — Opened, Assigned, Closed, Reopened — a legend, y-axis ticks, and x-a
 every n days so they never overlap; hovering a point shows a native `title` tooltip. Then
 **Statistics**: `Tabs` Department | Help Topic | Agent over a `ListTable` with columns
 Name, Opened, Assigned, Closed, Reopened, sortable client-side, with a totals row.
+
+> **Amended (as shipped):** the page's default start is today − (period − 1), so the window includes today.
 
 ## 5. API: dashboard statistics
 
@@ -245,6 +257,8 @@ Response:
 rows are omitted when all four counts are zero. Queries live in `gin/db/queries/dashboard.sql`
 (four sqlc queries: series, by department, by topic, by staff), each taking `all_depts`,
 `dept_ids`, `from`, `to`. No schema change.
+
+> **Amended (as shipped):** a bad `period` or `start` returns 400 through the shared error envelope (not 422); the default window includes today (default start = today − (period − 1)).
 
 ## 6. Error handling
 

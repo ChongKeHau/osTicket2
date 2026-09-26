@@ -16,7 +16,5 @@ table { border-collapse: collapse; width: 100%; }
 .unanswered { font-weight: 700; }
 .pre { white-space: pre-wrap; font-family: inherit; margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field-error { color: var(--danger); font-size: 12px; }
-.panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }

@@ -15,17 +15,12 @@ const COLOR = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i
 const FONT = /font-family\s*:(?!\s*var\()/i
 const RADIUS = /border-radius\s*:\s*[0-9.]+px/i
 
-const LEGACY = new Set<string>([
-])
-
 describe('css modules use tokens', () => {
   const files = walk(join(__dirname, '..'))
   it('finds modules', () => expect(files.length).toBeGreaterThan(0))
   for (const f of files) {
     const rel = f.replace(join(__dirname, '..'), 'src')
-    const relPath = rel.replace(/^src\//, '')
-    const run = LEGACY.has(relPath) ? it.skip : it
-    run(rel, () => {
+    it(rel, () => {
       const css = readFileSync(f, 'utf8')
       expect(css).not.toMatch(COLOR)
       expect(css).not.toMatch(FONT)

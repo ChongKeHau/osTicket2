@@ -30,9 +30,6 @@ const VARIABLES: [string, string][] = [
   ['{{.Link}}', 'Link to the ticket'],
 ]
 
-// Inline, not in the CSS module: the token test forbids font-family in modules.
-const MONO = { fontFamily: 'var(--font-mono)' }
-
 type Fields = Required<TemplateInput>
 const toInput = (t: EmailTemplate): Fields => ({ subject: t.subject, body_html: t.body_html, body_text: t.body_text })
 
@@ -81,13 +78,13 @@ function TemplateForm({ record }: { record: EmailTemplate }) {
           { id: 'tpl-subject', label: 'Subject', error: fields.subject,
             control: <input id="tpl-subject" type="text" className={s.body} value={form.subject} onChange={(e) => set('subject', e.target.value)} /> },
           { id: 'tpl-html', label: 'HTML body', error: fields.body_html,
-            control: <textarea id="tpl-html" rows={14} className={s.body} style={MONO} value={form.body_html} onChange={(e) => set('body_html', e.target.value)} /> },
+            control: <textarea id="tpl-html" rows={14} className={`${s.body} ${s.mono}`} value={form.body_html} onChange={(e) => set('body_html', e.target.value)} /> },
           { id: 'tpl-text', label: 'Text body', error: fields.body_text,
             control: <textarea id="tpl-text" rows={10} className={s.body} value={form.body_text} onChange={(e) => set('body_text', e.target.value)} /> },
           { label: 'Variables',
             control: (
               <ul className={s.vars} aria-label="Template variables">
-                {VARIABLES.map(([v, meaning]) => <li key={v}><code style={MONO}>{v}</code><span className={s.varHelp}>{meaning}</span></li>)}
+                {VARIABLES.map(([v, meaning]) => <li key={v}><code>{v}</code><span className={s.varHelp}>{meaning}</span></li>)}
               </ul>
             ) },
         ] },

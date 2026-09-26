@@ -1,0 +1,11 @@
+{
+  "name": "ticket-desk-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "walk": "node walk.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
