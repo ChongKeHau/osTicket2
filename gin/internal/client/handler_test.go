@@ -1,16 +1,23 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/apperr"
+	"github.com/grandpine/ticket-api/internal/attachment"
+	"github.com/grandpine/ticket-api/internal/httpx"
 )
 
 // fakeIdentity records calls; known addresses are the only ones it "mails".
@@ -89,16 +96,22 @@ func (f *fakeIdentity) SetPassword(_ context.Context, p Principal, in PasswordIn
 type harness struct {
 	r      *gin.Engine
 	svc    *fakeIdentity
+	portal *fakePortal
 	tokens *Tokens
 }
 
+// newHarness mounts the auth and portal routes on /portal; limit is both the
+// auth limiter's and the anonymous-upload limiter's budget.
 func newHarness(limit int) *harness {
 	gin.SetMode(gin.TestMode)
 	svc := &fakeIdentity{known: map[string]bool{"pat@x.test": true}}
+	portal := &fakePortal{}
 	tokens := NewTokens(secret, time.Minute)
 	r := gin.New()
-	NewHandler(svc, NewLimiter(limit, time.Minute)).MountAuth(r.Group("/portal"), tokens)
-	return &harness{r: r, svc: svc, tokens: tokens}
+	h := NewHandler(svc, NewLimiter(limit, time.Minute), portal, NewLimiter(limit, time.Minute), 64)
+	h.MountAuth(r.Group("/portal"), tokens)
+	h.MountPortal(r.Group("/portal"), tokens)
+	return &harness{r: r, svc: svc, portal: portal, tokens: tokens}
 }
 
 func (h *harness) call(method, path, tok, body string) *httptest.ResponseRecorder {
@@ -324,5 +337,253 @@ func TestHandlerSignedInRoutes(t *testing.T) {
 	}
 	if w := h.call(http.MethodPost, "/portal/auth/logout", user, `{}`); w.Code != 400 {
 		t.Fatalf("logout without token: %d", w.Code)
+	}
+}
+
+// fakePortal serves ticket 7 (file 3) to anyone; ticket 8 is closed; others do not exist.
+type fakePortal struct {
+	opened   []*Principal
+	openIPs  []string
+	uploads  []string
+	replies  []ReplyInput
+	listArgs []string
+}
+
+func (f *fakePortal) Reference(context.Context) (*Reference, error) {
+	return &Reference{SiteName: "Desk", Departments: []Ref{{ID: 1, Name: "Support"}}, Topics: []Ref{}}, nil
+}
+
+func (f *fakePortal) OpenTicket(_ context.Context, p *Principal, ip string, in OpenInput) (*Opened, error) {
+	if p == nil && in.Email == "" {
+		return nil, apperr.Validation("email", "required")
+	}
+	f.opened = append(f.opened, p)
+	f.openIPs = append(f.openIPs, ip)
+	return &Opened{ID: 7, Number: "000007"}, nil
+}
+
+func (f *fakePortal) ListTickets(_ context.Context, p Principal, state string, page httpx.Page) (*httpx.List[TicketRow], error) {
+	f.listArgs = append(f.listArgs, fmt.Sprintf("%d|%s|%d|%d", p.UserID, state, page.Page, page.PageSize))
+	return &httpx.List[TicketRow]{Items: []TicketRow{{ID: 7}}, Page: page.Page, PageSize: page.PageSize, Total: 1}, nil
+}
+
+func (f *fakePortal) view(id int64) (*TicketView, error) {
+	if id != 7 && id != 8 {
+		return nil, apperr.ErrNotFound
+	}
+	return &TicketView{TicketRow: TicketRow{ID: id, Number: "000007"}, Entries: []EntryView{}}, nil
+}
+
+func (f *fakePortal) GetTicket(_ context.Context, _ Principal, id int64) (*TicketView, error) {
+	return f.view(id)
+}
+
+func (f *fakePortal) Reply(_ context.Context, _ Principal, id int64, in ReplyInput) error {
+	if _, err := f.view(id); err != nil {
+		return err
+	}
+	f.replies = append(f.replies, in)
+	return nil
+}
+
+func (f *fakePortal) Close(_ context.Context, _ Principal, id int64) (*TicketView, error) {
+	if id == 8 {
+		return nil, fmt.Errorf("%w: ticket is already closed", apperr.ErrConflict)
+	}
+	return f.view(id)
+}
+
+func (f *fakePortal) Reopen(_ context.Context, _ Principal, id int64) (*TicketView, error) {
+	if id == 7 {
+		return nil, fmt.Errorf("%w: ticket is not closed", apperr.ErrConflict)
+	}
+	return f.view(id)
+}
+
+func (f *fakePortal) Download(_ context.Context, _ Principal, ticketID, fileID int64) (*attachment.File, io.ReadCloser, error) {
+	if ticketID != 7 || fileID != 3 {
+		return nil, nil, apperr.ErrNotFound
+	}
+	return &attachment.File{ID: 3, Name: `a"b.txt`, Mime: "text/plain", Size: 5}, io.NopCloser(strings.NewReader("hello")), nil
+}
+
+func (f *fakePortal) Upload(_ context.Context, name, mime string, r io.Reader) (*attachment.File, error) {
+	b, _ := io.ReadAll(r)
+	f.uploads = append(f.uploads, name+"|"+mime)
+	return &attachment.File{ID: 11, Name: name, Mime: mime, Size: int64(len(b))}, nil
+}
+
+// upload posts a multipart form; field names the form field, content its body.
+func (h *harness) upload(t *testing.T, tok, field, content string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Disposition", `form-data; name="`+field+`"; filename="note.txt"`)
+	hdr.Set("Content-Type", "text/plain")
+	part, err := mw.CreatePart(hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte(content))
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/portal/files", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	w := httptest.NewRecorder()
+	h.r.ServeHTTP(w, req)
+	return w
+}
+
+func TestPortalHandlerReference(t *testing.T) {
+	h := newHarness(100)
+	if w := h.call(http.MethodGet, "/portal/reference", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"site_name":"Desk"`) {
+		t.Fatalf("reference: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPortalHandlerOpenTicketOptionalSession(t *testing.T) {
+	h := newHarness(100)
+	body := `{"name":"Pat","email":"pat@x.test","subject":"S","message":"M","dept_id":1}`
+	w := h.call(http.MethodPost, "/portal/tickets", "", body)
+	if w.Code != 201 || !strings.Contains(w.Body.String(), `"number":"000007"`) {
+		t.Fatalf("anonymous open: %d %s", w.Code, w.Body.String())
+	}
+	if len(h.portal.opened) != 1 || h.portal.opened[0] != nil || h.portal.openIPs[0] == "" {
+		t.Fatalf("anonymous principal %+v ips %v", h.portal.opened, h.portal.openIPs)
+	}
+	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	if w := h.call(http.MethodPost, "/portal/tickets", user, `{"subject":"S","message":"M"}`); w.Code != 201 {
+		t.Fatalf("signed-in open: %d %s", w.Code, w.Body.String())
+	}
+	if p := h.portal.opened[1]; p == nil || p.UserID != 5 {
+		t.Fatalf("signed-in principal %+v", p)
+	}
+	// A present but invalid token is refused, never downgraded to anonymous.
+	reset, _, _ := h.tokens.IssueAccess(5, nil, true)
+	for tok, code := range map[string]int{"garbage": 401, reset: 403} {
+		if w := h.call(http.MethodPost, "/portal/tickets", tok, body); w.Code != code {
+			t.Fatalf("token %.10s: %d %s", tok, w.Code, w.Body.String())
+		}
+	}
+	if len(h.portal.opened) != 2 {
+		t.Fatalf("rejected tokens reached the service: %d", len(h.portal.opened))
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets", "", `{"email":"pat@x.test","message":"M"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["subject"] == "" {
+		t.Fatalf("missing subject: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets", "", `{"subject":"S","message":"M"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["email"] != "required" {
+		t.Fatalf("anonymous without email: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPortalHandlerUpload(t *testing.T) {
+	h := newHarness(1)
+	if w := h.upload(t, "", "file", "hello"); w.Code != 201 || !strings.Contains(w.Body.String(), `"id":11`) {
+		t.Fatalf("anonymous upload: %d %s", w.Code, w.Body.String())
+	}
+	w := h.upload(t, "", "file", "again")
+	if w.Code != 429 || decodeErr(t, w).Error.Fields["retry_after"] == "" {
+		t.Fatalf("second anonymous upload: %d %s", w.Code, w.Body.String())
+	}
+	// Signed-in uploads are not budgeted.
+	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	for i := 0; i < 2; i++ {
+		if w := h.upload(t, user, "file", "mine"); w.Code != 201 {
+			t.Fatalf("signed-in upload %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+	if w := h.upload(t, user, "other", "x"); w.Code != 400 {
+		t.Fatalf("missing file field: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.upload(t, user, "file", strings.Repeat("x", 2<<20)); w.Code != 413 {
+		t.Fatalf("oversize: %d", w.Code)
+	}
+	if strings.Join(h.portal.uploads, ",") != "note.txt|text/plain,note.txt|text/plain,note.txt|text/plain" {
+		t.Fatalf("uploads %v", h.portal.uploads)
+	}
+}
+
+func TestPortalHandlerTicketRoutes(t *testing.T) {
+	h := newHarness(100)
+	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	tid := int64(7)
+	guest, _, _ := h.tokens.IssueAccess(5, &tid, false)
+
+	if w := h.call(http.MethodGet, "/portal/tickets", "", ""); w.Code != 401 {
+		t.Fatalf("list without token: %d", w.Code)
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets?state=open&page=2&page_size=5", user, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"total":1`) {
+		t.Fatalf("list: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Join(h.portal.listArgs, ",") != "5|open|2|5" {
+		t.Fatalf("list args %v", h.portal.listArgs)
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets?page=0", user, ""); w.Code != 400 {
+		t.Fatalf("bad page: %d", w.Code)
+	}
+	for _, rc := range []struct{ method, path string }{
+		{http.MethodGet, "/portal/tickets"},
+		{http.MethodPost, "/portal/tickets/7/close"},
+		{http.MethodPost, "/portal/tickets/7/reopen"},
+	} {
+		w := h.call(rc.method, rc.path, guest, "")
+		if w.Code != 403 || decodeErr(t, w).Error.Code != "guest_session" {
+			t.Fatalf("guest %s %s: %d %s", rc.method, rc.path, w.Code, w.Body.String())
+		}
+	}
+
+	for _, tok := range []string{user, guest} {
+		if w := h.call(http.MethodGet, "/portal/tickets/7", tok, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"entries":[]`) {
+			t.Fatalf("get: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets/99", user, ""); w.Code != 404 {
+		t.Fatalf("get unknown: %d", w.Code)
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets/7", "", ""); w.Code != 401 {
+		t.Fatalf("get without token: %d", w.Code)
+	}
+
+	if w := h.call(http.MethodPost, "/portal/tickets/7/reply", guest, `{"body":"thanks","file_ids":[11]}`); w.Code != 204 {
+		t.Fatalf("reply: %d %s", w.Code, w.Body.String())
+	}
+	if len(h.portal.replies) != 1 || h.portal.replies[0].Body != "thanks" || len(h.portal.replies[0].FileIDs) != 1 {
+		t.Fatalf("replies %+v", h.portal.replies)
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/7/reply", user, `{}`); w.Code != 400 {
+		t.Fatalf("reply without body: %d", w.Code)
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/99/reply", user, `{"body":"x"}`); w.Code != 404 {
+		t.Fatalf("reply unknown: %d", w.Code)
+	}
+
+	if w := h.call(http.MethodPost, "/portal/tickets/7/close", user, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"id":7`) {
+		t.Fatalf("close: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/8/close", user, ""); w.Code != 409 || decodeErr(t, w).Error.Code != "conflict" {
+		t.Fatalf("close closed: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/8/reopen", user, ""); w.Code != 200 {
+		t.Fatalf("reopen: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/7/reopen", user, ""); w.Code != 409 {
+		t.Fatalf("reopen open: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/abc/close", user, ""); w.Code != 400 {
+		t.Fatalf("bad id: %d", w.Code)
+	}
+
+	w := h.call(http.MethodGet, "/portal/tickets/7/files/3", guest, "")
+	if w.Code != 200 || w.Body.String() != "hello" || w.Header().Get("Content-Disposition") != `attachment; filename="ab.txt"` || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("download: %d %q %v", w.Code, w.Body.String(), w.Header())
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets/7/files/4", user, ""); w.Code != 404 {
+		t.Fatalf("download other file: %d", w.Code)
+	}
+	if w := h.call(http.MethodGet, "/portal/tickets/7/files/x", user, ""); w.Code != 400 {
+		t.Fatalf("download bad file id: %d", w.Code)
 	}
 }

@@ -361,6 +361,11 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		if err != nil {
 			return err
 		}
+		if in.UserID != nil {
+			if err := q.SetThreadEntryUser(ctx, db.SetThreadEntryUserParams{ID: entry.ID, UserID: in.UserID}); err != nil {
+				return err
+			}
+		}
 		if err := attachFiles(ctx, q, SystemPrincipal, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
@@ -456,7 +461,12 @@ func applyStatus(ctx context.Context, q *db.Queries, p auth.Principal, row db.Ge
 	if err := q.SetTicketStatus(ctx, db.SetTicketStatusParams{ID: row.ID, StatusID: statusID, Close: doClose, Reopen: doReopen}); err != nil {
 		return err
 	}
-	return event(ctx, q, row.ID, &p.StaffID, kind, map[string]any{"from": row.StatusID, "to": statusID})
+	// SystemPrincipal has no staff row, so its changes record no staff_id.
+	var actor *int64
+	if p.StaffID != 0 {
+		actor = &p.StaffID
+	}
+	return event(ctx, q, row.ID, actor, kind, map[string]any{"from": row.StatusID, "to": statusID})
 }
 
 func attachFiles(ctx context.Context, q *db.Queries, p auth.Principal, entryID int64, fileIDs []int64) error {

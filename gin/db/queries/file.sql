@@ -30,3 +30,12 @@ ORDER BY f.id;
 DELETE FROM file f
 WHERE f.id = $1
   AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id);
+
+-- name: FileOnCustomerEntry :one
+-- Whether the file is attached to a customer-visible entry (a message or a
+-- response, never a note) of the ticket.
+SELECT EXISTS (
+  SELECT 1 FROM attachment a
+  JOIN thread_entry te ON te.id = a.thread_entry_id
+  WHERE a.file_id = @file_id AND te.ticket_id = @ticket_id AND te.type IN ('message', 'response')
+)::boolean;

@@ -2,10 +2,12 @@ package client
 
 import (
 	"context"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/apperr"
+	"github.com/grandpine/ticket-api/internal/attachment"
 	"github.com/grandpine/ticket-api/internal/httpx"
 )
 
@@ -28,16 +30,34 @@ type IdentityService interface {
 	SetPassword(ctx context.Context, p Principal, in PasswordInput) error
 }
 
-// Handler serves the portal auth and profile routes.
-type Handler struct {
-	svc     IdentityService
-	limiter *Limiter
+// Portal is what the portal ticket routes need; *PortalService implements it.
+type Portal interface {
+	Reference(ctx context.Context) (*Reference, error)
+	OpenTicket(ctx context.Context, p *Principal, ip string, in OpenInput) (*Opened, error)
+	ListTickets(ctx context.Context, p Principal, state string, page httpx.Page) (*httpx.List[TicketRow], error)
+	GetTicket(ctx context.Context, p Principal, id int64) (*TicketView, error)
+	Reply(ctx context.Context, p Principal, id int64, in ReplyInput) error
+	Close(ctx context.Context, p Principal, id int64) (*TicketView, error)
+	Reopen(ctx context.Context, p Principal, id int64) (*TicketView, error)
+	Download(ctx context.Context, p Principal, ticketID, fileID int64) (*attachment.File, io.ReadCloser, error)
+	Upload(ctx context.Context, name, mime string, r io.Reader) (*attachment.File, error)
 }
 
-// NewHandler builds the handler; limiter budgets login, link, reset and access
-// requests per address and per client IP.
-func NewHandler(svc IdentityService, limiter *Limiter) *Handler {
-	return &Handler{svc: svc, limiter: limiter}
+// Handler serves the portal auth, profile and ticket routes.
+type Handler struct {
+	svc         IdentityService
+	limiter     *Limiter
+	portal      Portal
+	uploadLimit *Limiter
+	maxBytes    int64
+}
+
+// NewHandler builds the handler. limiter budgets login, link, reset, access
+// and register requests per address and per client IP; portal serves the
+// ticket routes; uploadLimit budgets anonymous uploads per client IP (only
+// its IP side is used); maxBytes caps one upload, as for staff uploads.
+func NewHandler(svc IdentityService, limiter *Limiter, portal Portal, uploadLimit *Limiter, maxBytes int64) *Handler {
+	return &Handler{svc: svc, limiter: limiter, portal: portal, uploadLimit: uploadLimit, maxBytes: maxBytes}
 }
 
 // MountAuth registers the portal auth routes on public (the unauthenticated
@@ -245,4 +265,181 @@ func (h *Handler) setPassword(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// MountPortal registers the portal ticket routes on public (the
+// unauthenticated portal group) and builds the signed-in groups from tokens:
+//   - public: GET reference; OptionalUser: POST tickets, POST files
+//   - RequireUser (guests limited to their ticket): GET tickets/:id,
+//     POST tickets/:id/reply, GET tickets/:id/files/:fileId
+//   - RequireUser + RequireAccount: GET tickets, POST tickets/:id/close,
+//     POST tickets/:id/reopen
+func (h *Handler) MountPortal(public *gin.RouterGroup, tokens *Tokens) {
+	public.GET("/reference", h.reference)
+	optional := public.Group("", OptionalUser(tokens, h.svc))
+	optional.POST("/tickets", h.openTicket)
+	optional.POST("/files", h.upload)
+
+	user := public.Group("", RequireUser(tokens, h.svc))
+	user.GET("/tickets/:id", h.getTicket)
+	user.POST("/tickets/:id/reply", h.reply)
+	user.GET("/tickets/:id/files/:fileId", h.download)
+
+	account := user.Group("", RequireAccount())
+	account.GET("/tickets", h.listTickets)
+	account.POST("/tickets/:id/close", h.closeTicket)
+	account.POST("/tickets/:id/reopen", h.reopenTicket)
+}
+
+func (h *Handler) reference(c *gin.Context) {
+	out, err := h.portal.Reference(c.Request.Context())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handler) openTicket(c *gin.Context) {
+	var in OpenInput
+	if !httpx.BindJSON(c, &in) {
+		return
+	}
+	var pp *Principal
+	if p, ok := FromContext(c); ok {
+		pp = &p
+	}
+	out, err := h.portal.OpenTicket(c.Request.Context(), pp, c.ClientIP(), in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, out)
+}
+
+// upload takes the same multipart form as the staff upload. Anonymous callers
+// are budgeted per IP before the body is read.
+func (h *Handler) upload(c *gin.Context) {
+	if _, ok := FromContext(c); !ok {
+		if err := h.uploadLimit.CheckIP(c.ClientIP()); err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+	}
+	src, fh, ok := attachment.FormFile(c, h.maxBytes)
+	if !ok {
+		return
+	}
+	defer src.Close()
+	out, err := h.portal.Upload(c.Request.Context(), fh.Filename, fh.Header.Get("Content-Type"), src)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, out)
+}
+
+// ticketParam reads the principal and the :id param, failing the request when either is missing.
+func ticketParam(c *gin.Context) (Principal, int64, bool) {
+	p, ok := principal(c)
+	if !ok {
+		return Principal{}, 0, false
+	}
+	id, err := httpx.ParseID(c, "id")
+	if err != nil {
+		httpx.Fail(c, err)
+		return Principal{}, 0, false
+	}
+	return p, id, true
+}
+
+func (h *Handler) listTickets(c *gin.Context) {
+	p, ok := principal(c)
+	if !ok {
+		return
+	}
+	page, err := httpx.ParsePage(c)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	out, err := h.portal.ListTickets(c.Request.Context(), p, c.Query("state"), page)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handler) getTicket(c *gin.Context) {
+	p, id, ok := ticketParam(c)
+	if !ok {
+		return
+	}
+	out, err := h.portal.GetTicket(c.Request.Context(), p, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handler) reply(c *gin.Context) {
+	p, id, ok := ticketParam(c)
+	if !ok {
+		return
+	}
+	var in ReplyInput
+	if !httpx.BindJSON(c, &in) {
+		return
+	}
+	if err := h.portal.Reply(c.Request.Context(), p, id, in); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) closeTicket(c *gin.Context) {
+	p, id, ok := ticketParam(c)
+	if !ok {
+		return
+	}
+	out, err := h.portal.Close(c.Request.Context(), p, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handler) reopenTicket(c *gin.Context) {
+	p, id, ok := ticketParam(c)
+	if !ok {
+		return
+	}
+	out, err := h.portal.Reopen(c.Request.Context(), p, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handler) download(c *gin.Context) {
+	p, id, ok := ticketParam(c)
+	if !ok {
+		return
+	}
+	fileID, err := httpx.ParseID(c, "fileId")
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	meta, rc, err := h.portal.Download(c.Request.Context(), p, id, fileID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	attachment.ServeFile(c, meta, rc)
 }

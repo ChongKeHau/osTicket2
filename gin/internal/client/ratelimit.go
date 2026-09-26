@@ -33,3 +33,13 @@ func (l *Limiter) Check(email, ip string) error {
 	}
 	return apperr.RateLimited(after)
 }
+
+// CheckIP counts one attempt against the IP budget only, for requests that
+// carry no address (anonymous uploads).
+func (l *Limiter) CheckIP(ip string) error {
+	i := "i|" + ip
+	if l.byIP.Allow(i) {
+		return nil
+	}
+	return apperr.RateLimited(l.byIP.RetryAfter(i))
+}

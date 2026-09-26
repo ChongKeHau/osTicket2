@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+const annotateLatestTicketEvent = `-- name: AnnotateLatestTicketEvent :exec
+UPDATE ticket_event SET data = data || jsonb_build_object('user_id', $1::bigint)
+WHERE id = (SELECT max(le.id) FROM ticket_event le WHERE le.ticket_id = $2::bigint)
+`
+
+type AnnotateLatestTicketEventParams struct {
+	UserID   int64
+	TicketID int64
+}
+
+// Adds the end user who caused it to the ticket's newest event: the status
+// change a portal close, reopen or reply just recorded in the same transaction.
+func (q *Queries) AnnotateLatestTicketEvent(ctx context.Context, arg AnnotateLatestTicketEventParams) error {
+	_, err := q.db.Exec(ctx, annotateLatestTicketEvent, arg.UserID, arg.TicketID)
+	return err
+}
+
 const claimTicketUser = `-- name: ClaimTicketUser :exec
 UPDATE ticket SET user_id = $2 WHERE id = $1 AND user_id IS NULL
 `

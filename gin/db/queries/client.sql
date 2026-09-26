@@ -92,3 +92,9 @@ SELECT id, name, state FROM ticket_status WHERE state = $1 ORDER BY sort_order, 
 
 -- name: GetTicketIDByNumberAndEmail :one
 SELECT id FROM ticket WHERE number = $1 AND lower(requester_email) = lower($2);
+
+-- name: AnnotateLatestTicketEvent :exec
+-- Adds the end user who caused it to the ticket's newest event: the status
+-- change a portal close, reopen or reply just recorded in the same transaction.
+UPDATE ticket_event SET data = data || jsonb_build_object('user_id', @user_id::bigint)
+WHERE id = (SELECT max(le.id) FROM ticket_event le WHERE le.ticket_id = @ticket_id::bigint);

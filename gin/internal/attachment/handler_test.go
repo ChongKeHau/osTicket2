@@ -36,6 +36,12 @@ func (f *fake) Download(_ context.Context, p auth.Principal, id int64) (*File, i
 	return &File{ID: 3, Name: "../../evil name.txt", Mime: "text/plain", Size: 5}, io.NopCloser(strings.NewReader("hello")), nil
 }
 func (f *fake) GC(context.Context, time.Duration) (int, error) { return 0, nil }
+func (f *fake) UploadAnonymous(context.Context, string, string, io.Reader) (*File, error) {
+	return nil, apperr.ErrForbidden
+}
+func (f *fake) DownloadForTicket(context.Context, int64, int64) (*File, io.ReadCloser, error) {
+	return nil, nil, apperr.ErrNotFound
+}
 
 func newRouter(f *fake) *gin.Engine {
 	gin.SetMode(gin.TestMode)

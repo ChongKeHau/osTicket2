@@ -94,6 +94,21 @@ func RequireUser(tokens *Tokens, loader UserLoader, opts ...Option) gin.HandlerF
 	}
 }
 
+// OptionalUser admits anonymous requests: with no Authorization header it
+// continues without a principal; with one it behaves exactly like RequireUser,
+// so an invalid, expired, staff or password-reset token is still rejected
+// rather than silently treated as anonymous.
+func OptionalUser(tokens *Tokens, loader UserLoader) gin.HandlerFunc {
+	require := RequireUser(tokens, loader)
+	return func(c *gin.Context) {
+		if c.GetHeader("Authorization") == "" {
+			c.Next()
+			return
+		}
+		require(c)
+	}
+}
+
 // RequireAccount must run after RequireUser; it turns guest sessions away with 403 guest_session.
 func RequireAccount() gin.HandlerFunc {
 	return func(c *gin.Context) {

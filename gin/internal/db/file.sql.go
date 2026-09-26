@@ -80,6 +80,28 @@ func (q *Queries) DeleteUnattachedFile(ctx context.Context, id int64) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const fileOnCustomerEntry = `-- name: FileOnCustomerEntry :one
+SELECT EXISTS (
+  SELECT 1 FROM attachment a
+  JOIN thread_entry te ON te.id = a.thread_entry_id
+  WHERE a.file_id = $1 AND te.ticket_id = $2 AND te.type IN ('message', 'response')
+)::boolean
+`
+
+type FileOnCustomerEntryParams struct {
+	FileID   int64
+	TicketID int64
+}
+
+// Whether the file is attached to a customer-visible entry (a message or a
+// response, never a note) of the ticket.
+func (q *Queries) FileOnCustomerEntry(ctx context.Context, arg FileOnCustomerEntryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, fileOnCustomerEntry, arg.FileID, arg.TicketID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const fileTicketDeptID = `-- name: FileTicketDeptID :one
 SELECT t.dept_id
 FROM attachment a
