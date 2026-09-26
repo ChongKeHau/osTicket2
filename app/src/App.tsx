@@ -27,6 +27,9 @@ import { OpenTicketPage } from './portal/pages/OpenTicketPage'
 import { RegisterPage } from './portal/pages/RegisterPage'
 import { ResetPage } from './portal/pages/ResetPage'
 import { TokenPage } from './portal/pages/TokenPage'
+import { ProfilePage as PortalProfilePage } from './portal/pages/ProfilePage'
+import { TicketListPage as PortalTicketListPage } from './portal/pages/TicketListPage'
+import { TicketPage as PortalTicketPage } from './portal/pages/TicketPage'
 import { RequirePortalAccount } from './portal/RequirePortalAccount'
 import { RequirePortalUser } from './portal/RequirePortalUser'
 import { AppShell } from './ui/AppShell'
@@ -53,10 +56,10 @@ function PortalApp() {
         <Route path="reset" element={<ResetPage />} />
         <Route path="t/:token" element={<TokenPage />} />
         <Route element={<RequirePortalUser />}>
-          <Route path="tickets/:id" element={<h2>Ticket</h2>} />
+          <Route path="tickets/:id" element={<PortalTicketPage />} />
           <Route element={<RequirePortalAccount />}>
-            <Route path="tickets" element={<h2>My Tickets</h2>} />
-            <Route path="profile" element={<h2>Profile</h2>} />
+            <Route path="tickets" element={<PortalTicketListPage />} />
+            <Route path="profile" element={<PortalProfilePage />} />
           </Route>
         </Route>
         <Route path="*" element={<h2>Page not found</h2>} />

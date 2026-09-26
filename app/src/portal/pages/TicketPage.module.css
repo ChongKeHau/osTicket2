@@ -1,0 +1,32 @@
+.title { font-size: 17px; margin: 0; overflow-wrap: anywhere; }
+.titleRow { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; flex-wrap: wrap; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
+.number { font-family: var(--font-mono); }
+
+.info { width: 100%; max-width: 560px; border: 1px solid var(--border); border-collapse: collapse; background: var(--panel-bg); margin-bottom: var(--space-4); }
+.info th { text-align: left; width: 130px; padding: 6px 10px; background: var(--page-bg); border-bottom: 1px solid var(--border); font-weight: 700; vertical-align: top; }
+.info td { padding: 6px 10px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.info tr:last-child th, .info tr:last-child td { border-bottom: 0; }
+
+.thread { display: flex; flex-direction: column; }
+.entry { width: 85%; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: var(--space-3); background: var(--panel-bg); }
+.message { margin-right: auto; }
+.response { margin-left: auto; }
+.entryHeader { display: flex; gap: var(--space-2); align-items: baseline; padding: var(--space-2) var(--space-3); background: var(--page-bg); border-bottom: 1px solid var(--border); }
+.response .entryHeader { justify-content: flex-end; background: var(--accent-bg); }
+.poster { font-weight: 700; }
+.time { color: var(--text-muted); font-size: 13px; }
+.body { padding: var(--space-3); overflow-wrap: anywhere; }
+.attachments { padding: 0 var(--space-3) var(--space-3); }
+
+.reply { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); margin-top: var(--space-4); background: var(--panel-bg); }
+.replyForm { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-2) var(--space-3); align-items: start; }
+.replyForm > label, .label { font-weight: 700; padding-top: 6px; }
+.textarea { width: 100%; box-sizing: border-box; }
+.note { margin: 0 0 var(--space-2); color: var(--text-muted); }
+.actions { grid-column: 2; }
+
+@media (max-width: 768px) {
+  .entry { width: 100%; }
+  .replyForm { grid-template-columns: 1fr; }
+  .actions { grid-column: 1; }
+}
