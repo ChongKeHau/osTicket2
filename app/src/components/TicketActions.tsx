@@ -1,5 +1,6 @@
 import type { Ticket } from '../api/types'
-import { assignableStaff, useReferenceData } from '../hooks/useReferenceData'
+import { useAuth } from '../auth/AuthContext'
+import { assignableStaff, useReferenceData, visibleDepartments } from '../hooks/useReferenceData'
 import { useTicketMutations } from '../hooks/useTicketMutations'
 import { staffName } from '../lib/format'
 import { useBanner } from '../ui/BannerContext'
@@ -9,6 +10,7 @@ import { Menu, type MenuItem } from '../ui/Menu'
 
 export function TicketActions({ ticket, onCompose }: { ticket: Ticket; onCompose: (tab: 'reply' | 'note') => void }) {
   const { staff, departments, statuses } = useReferenceData()
+  const auth = useAuth()
   const m = useTicketMutations(ticket.id)
   const { flash } = useBanner()
   const run = (message: string, p: Promise<unknown>) => { p.then(() => flash('notice', message), (e: unknown) => flash('error', errorMessage(e))) }
@@ -20,7 +22,7 @@ export function TicketActions({ ticket, onCompose }: { ticket: Ticket; onCompose
     })),
     { label: 'Unassign', danger: true, disabled: !ticket.assignee, onSelect: () => run('Ticket unassigned', m.assign.mutateAsync(null)) },
   ]
-  const transferItems: MenuItem[] = departments.map((d) => ({
+  const transferItems: MenuItem[] = visibleDepartments(departments, auth, ticket.department.id).map((d) => ({
     label: d.name, disabled: d.id === ticket.department.id,
     onSelect: () => run(`Ticket transferred to ${d.name}`, m.transfer.mutateAsync(d.id)),
   }))

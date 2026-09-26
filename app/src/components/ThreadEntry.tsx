@@ -12,7 +12,7 @@ export function ThreadEntry({ entry }: { entry: Entry }) {
         <span className={s.poster}>{entry.poster || 'Unknown'}</span>
         {entry.type === 'note' && <Badge>Internal Note</Badge>}
         {entry.title && <em>{entry.title}</em>}
-        <time className={s.time} dateTime={entry.created_at} title={formatDateTime(entry.created_at)}>{relativeTime(entry.created_at)}</time>
+        <time className={s.time} dateTime={entry.created_at} title={relativeTime(entry.created_at)}>{formatDateTime(entry.created_at)}</time>
       </header>
       <div className={s.body}>
         {entry.format === 'html'

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { REFRESH_KEY, tokens } from '../api/client'
 import { entryFixtures, eventFixtures, sessionFixture } from '../test/fixtures'
+import { formatDateTime, relativeTime } from '../lib/format'
 import { renderWithProviders } from '../test/render'
 import { server } from '../test/setup'
 import { EventsPanel } from './EventsPanel'
@@ -15,7 +16,10 @@ test('renders entries oldest first with posters, times and attachments', async (
   const items = await screen.findAllByRole('article')
   expect(items).toHaveLength(2)
   expect(within(items[0]!).getByText('Pat')).toBeInTheDocument()
-  expect(items[0]!.querySelector('time')).toHaveAttribute('datetime', entryFixtures[0]!.created_at)
+  const time = items[0]!.querySelector('time')
+  expect(time).toHaveAttribute('datetime', entryFixtures[0]!.created_at)
+  expect(time).toHaveTextContent(formatDateTime(entryFixtures[0]!.created_at))
+  expect(time).toHaveAttribute('title', relativeTime(entryFixtures[0]!.created_at))
   expect(within(items[1]!).getByText('Ann Agent')).toBeInTheDocument()
   expect(within(items[1]!).getByRole('button', { name: /log\.txt/ })).toBeInTheDocument()
   expect(screen.queryByText('Internal Note')).not.toBeInTheDocument()
@@ -87,4 +91,13 @@ test('events panel is collapsed and lists the audit trail when expanded', async 
   await userEvent.click(screen.getByText('History'))
   expect(await screen.findByText(/created/i)).toBeInTheDocument()
   expect(screen.getByText(/Ann Agent/)).toBeInTheDocument()
+})
+
+test('a failed thread load shows the error with a retry', async () => {
+  let calls = 0
+  server.use(http.get('/api/v1/tickets/7/thread', () => { calls++; return HttpResponse.json({ error: { code: 'internal', message: 'boom' } }, { status: 500 }) }))
+  renderWithProviders(<Thread ticketId={7} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('boom')
+  await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  await vi.waitFor(() => expect(calls).toBe(2))
 })

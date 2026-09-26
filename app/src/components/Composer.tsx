@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
-import { note, reply, setStatus } from '../api/tickets'
+import { note, reply } from '../api/tickets'
 import { useInvalidateTicket } from '../hooks/useTicketMutations'
 import { useReferenceData } from '../hooks/useReferenceData'
 import { useBanner } from '../ui/BannerContext'
@@ -24,10 +24,12 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
   const [statusId, setStatusId] = useState<number | ''>('')
   const [noteTitle, setNoteTitle] = useState('')
   const [noteBody, setNoteBody] = useState('')
-  const [pending, setPending] = useState<PendingFile[]>([])
+  const [replyFiles, setReplyFiles] = useState<PendingFile[]>([])
+  const [noteFiles, setNoteFiles] = useState<PendingFile[]>([])
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
+  const pending = tab === 'reply' ? replyFiles : noteFiles
   const fileIds = pending.filter((p) => p.status === 'done' && p.fileId !== undefined).map((p) => p.fileId as number)
   const uploading = pending.some((p) => p.status === 'uploading')
 
@@ -42,17 +44,13 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
     } finally { setBusy(false) }
   }
 
+  // A status change rides inside the reply, so the server applies both in one transaction.
   async function postReply(e: FormEvent) {
     e.preventDefault()
-    const ok = await attempt(() => reply(ticketId, { body, format: 'text', file_ids: fileIds }))
+    const ok = await attempt(() => reply(ticketId, { body, format: 'text', ...(statusId !== '' ? { status_id: statusId } : {}), file_ids: fileIds }))
     if (!ok) return
-    setBody(''); setPending([])
-    if (statusId !== '') {
-      setBusy(true)
-      try { await setStatus(ticketId, statusId); flash('notice', 'Reply posted and status updated') }
-      catch (err) { flash('error', `The reply was posted but the status was not changed: ${errorMessage(err)}`) }
-      finally { setBusy(false); setStatusId('') }
-    } else flash('notice', 'Reply posted')
+    flash('notice', statusId !== '' ? 'Reply posted and status updated' : 'Reply posted')
+    setBody(''); setStatusId(''); setReplyFiles([])
     await invalidate()
   }
 
@@ -60,7 +58,7 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
     e.preventDefault()
     const ok = await attempt(() => note(ticketId, { ...(noteTitle.trim() ? { title: noteTitle.trim() } : {}), body: noteBody, format: 'text', file_ids: fileIds }))
     if (!ok) return
-    setNoteTitle(''); setNoteBody(''); setPending([])
+    setNoteTitle(''); setNoteBody(''); setNoteFiles([])
     flash('notice', 'Note posted')
     await invalidate()
   }
@@ -69,7 +67,7 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
   const attachments = (id: string) => (
     <>
       <span className={s.label}>Attachments</span>
-      <div><FileUpload inputId={id} pending={pending} onChange={setPending} />{fieldError('file_ids')}</div>
+      <div><FileUpload inputId={id} pending={pending} onChange={tab === 'reply' ? setReplyFiles : setNoteFiles} />{fieldError('file_ids')}</div>
     </>
   )
 
@@ -77,7 +75,7 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
     <section id="composer" className={s.box} aria-label="Compose">
       <Tabs tabs={TABS} active={tab} onChange={(t) => { setFields({}); onTab(t as ComposerTab) }}>
         {tab === 'reply' ? (
-          <form onSubmit={(e) => void postReply(e)} className={s.form}>
+          <form key="reply" onSubmit={(e) => void postReply(e)} className={s.form}>
             <label htmlFor="reply-to">To</label>
             <input id="reply-to" value={requesterEmail} readOnly />
             <label htmlFor="reply-body">Response</label>
@@ -91,7 +89,7 @@ export function Composer({ ticketId, tab, onTab, requesterEmail }: Props) {
             <div className={s.actions}><Button type="submit" variant="primary" disabled={busy || uploading || !body.trim()}>Post Reply</Button></div>
           </form>
         ) : (
-          <form onSubmit={(e) => void postNote(e)} className={s.form}>
+          <form key="note" onSubmit={(e) => void postNote(e)} className={s.form}>
             <label htmlFor="note-title">Title</label>
             <div><input id="note-title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />{fieldError('title')}</div>
             <label htmlFor="note-body">Note</label>

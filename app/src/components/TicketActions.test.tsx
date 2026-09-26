@@ -2,8 +2,8 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '../test/setup'
-import { referenceFixtures, ticketFixture } from '../test/fixtures'
-import { renderWithProviders } from '../test/render'
+import { adminProfileFixture, referenceFixtures, ticketFixture } from '../test/fixtures'
+import { renderAuthed } from '../test/render'
 import { staffName } from '../lib/format'
 import { BannerProvider } from '../ui/BannerContext'
 import { TicketActions } from './TicketActions'
@@ -18,13 +18,16 @@ beforeEach(() => {
   )
 })
 
-function mount(onCompose = vi.fn()) {
-  renderWithProviders(<BannerProvider><TicketActions ticket={ticketFixture} onCompose={onCompose} /></BannerProvider>)
+const asAdmin = () => server.use(http.get('/api/v1/me', () => HttpResponse.json(adminProfileFixture)))
+
+async function mount(onCompose = vi.fn()) {
+  renderAuthed(<BannerProvider><TicketActions ticket={ticketFixture} onCompose={onCompose} /></BannerProvider>)
+  await screen.findByRole('button', { name: 'Post Reply' })
   return onCompose
 }
 
 it('offers Post Reply / Post Note and the menus', async () => {
-  const onCompose = mount()
+  const onCompose = await mount()
   await userEvent.click(screen.getByRole('button', { name: 'Post Reply' }))
   expect(onCompose).toHaveBeenCalledWith('reply')
   await userEvent.click(screen.getByRole('button', { name: 'Post Note' }))
@@ -32,7 +35,7 @@ it('offers Post Reply / Post Note and the menus', async () => {
 })
 
 it('assigns through the Assign menu and flashes a notice', async () => {
-  mount()
+  await mount()
   await userEvent.click(screen.getByRole('button', { name: /Assign/ }))
   const agent = referenceFixtures.staff[0]!
   await userEvent.click(await screen.findByRole('menuitem', { name: staffName(agent) }))
@@ -41,14 +44,15 @@ it('assigns through the Assign menu and flashes a notice', async () => {
 })
 
 it('offers only agents who can see the ticket department', async () => {
-  mount()
+  await mount()
   await userEvent.click(screen.getByRole('button', { name: /Assign/ }))
   await screen.findByRole('menuitem', { name: 'Ann Agent' })
   expect(screen.getAllByRole('menuitem').map((li) => li.textContent)).toEqual(['Ann Agent', 'Root Admin', 'Unassign'])
 })
 
 it('changes status and transfers', async () => {
-  mount()
+  asAdmin()
+  await mount()
   await userEvent.click(screen.getByRole('button', { name: new RegExp(ticketFixture.status.name) }))
   expect(await screen.findByRole('menuitem', { name: ticketFixture.status.name })).toHaveAttribute('aria-disabled', 'true')
   const other = referenceFixtures.statuses.find((st) => st.id !== ticketFixture.status.id)!
@@ -61,9 +65,17 @@ it('changes status and transfers', async () => {
 })
 
 it('flashes the error when an action fails', async () => {
+  asAdmin()
   server.use(http.post('/api/v1/tickets/:id/transfer', () => HttpResponse.json({ error: { code: 'forbidden', message: 'cannot transfer' } }, { status: 403 })))
-  mount()
+  await mount()
   await userEvent.click(screen.getByRole('button', { name: /Transfer/ }))
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Billing' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('cannot transfer')
+})
+
+it('offers a non-admin only their own departments, with the current one disabled', async () => {
+  await mount()
+  await userEvent.click(screen.getByRole('button', { name: /Transfer/ }))
+  expect(await screen.findByRole('menuitem', { name: 'Support' })).toHaveAttribute('aria-disabled', 'true')
+  expect(screen.queryByRole('menuitem', { name: 'Billing' })).not.toBeInTheDocument()
 })

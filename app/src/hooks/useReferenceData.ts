@@ -1,6 +1,11 @@
 import { useQueries } from '@tanstack/react-query'
 import { listDepartments, listPriorities, listStaff, listStatuses, listTopics } from '../api/reference'
-import type { Staff } from '../api/types'
+import type { Department, Staff } from '../api/types'
+
+/** Departments an agent may move a ticket to (the server's CanSeeDept rule), plus the ticket's current one. */
+export function visibleDepartments(departments: Department[], auth: { isAdmin: boolean; departmentIds: number[] }, currentId?: number): Department[] {
+  return departments.filter((d) => auth.isAdmin || auth.departmentIds.includes(d.id) || d.id === currentId)
+}
 
 /** Active agents who can work a ticket in `deptId`: admins, and agents with access to that department. */
 export function assignableStaff(staff: Staff[], deptId: number): Staff[] {

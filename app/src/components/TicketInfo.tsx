@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Ticket } from '../api/types'
-import { assignableStaff, useReferenceData } from '../hooks/useReferenceData'
+import { useAuth } from '../auth/AuthContext'
+import { assignableStaff, useReferenceData, visibleDepartments } from '../hooks/useReferenceData'
 import { useTicketMutations } from '../hooks/useTicketMutations'
 import { formatDateTime, fromLocalInput, relativeTime, staffName, toLocalInput } from '../lib/format'
 import { InlineEdit } from '../ui/InlineEdit'
@@ -11,6 +12,7 @@ const idOrEmpty = (v: string) => (v ? Number(v) : '')
 /** The two osTicket-style info tables; every editable field is an inline edit whose draft resets on open. */
 export function TicketInfo({ ticket }: { ticket: Ticket }) {
   const { priorities, statuses, departments, staff, topics } = useReferenceData()
+  const auth = useAuth()
   const m = useTicketMutations(ticket.id)
   const [subject, setSubject] = useState(ticket.subject)
   const [statusId, setStatusId] = useState(ticket.status.id)
@@ -38,7 +40,7 @@ export function TicketInfo({ ticket }: { ticket: Ticket }) {
           </td></tr>
           <tr><th>Department</th><td>
             <InlineEdit label="Department" value={ticket.department.name} onOpen={() => setDeptId(ticket.department.id)} onSave={() => m.transfer.mutateAsync(deptId)}
-              editor={() => <select aria-label="Department editor" value={deptId} onChange={(e) => setDeptId(Number(e.target.value))}>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>} />
+              editor={() => <select aria-label="Department editor" value={deptId} onChange={(e) => setDeptId(Number(e.target.value))}>{visibleDepartments(departments, auth, ticket.department.id).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>} />
           </td></tr>
           <tr><th>Created</th><td><span title={ticket.created_at}>{formatDateTime(ticket.created_at)} <span className="muted">({relativeTime(ticket.created_at)})</span></span></td></tr>
           <tr><th>Due Date</th><td>
