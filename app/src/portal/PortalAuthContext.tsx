@@ -72,7 +72,13 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
         setStatus('authenticated')
       } catch (e) {
         if (stale()) return
-        if (e instanceof ApiError && e.status === 401) { portal.tokens.clear(); setStatus('anonymous'); setNotice(EXPIRED) }
+        // 401: the session is gone. 403: a scoped session (e.g. reset) that may not read /me —
+        // either way a retry cannot succeed, so end it cleanly.
+        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+          portal.tokens.clear()
+          setStatus('anonymous')
+          if (e.status === 401) setNotice(EXPIRED)
+        }
         else fail(e)
       }
     })()

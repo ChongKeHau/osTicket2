@@ -23,6 +23,21 @@ it('keeps two stores on separate storage keys and refresh paths', async () => {
   expect(staff.tokens.access).toBeNull()
 })
 
+it('keeps a session without a refresh token in memory only', async () => {
+  const portal = createSessionStore({ storageKey: portalKey, base: '/api/v1/portal', refreshPath: '/auth/refresh' })
+  const lost = vi.fn()
+  portal.tokens.setOnSessionLost(lost)
+  localStorage.setItem(portalKey, 'pr-old')
+  portal.tokens.setSession({ access_token: 'reset-access', refresh_token: '' })
+  expect(portal.tokens.access).toBe('reset-access')
+  expect(localStorage.getItem(portalKey)).toBeNull()
+  portal.tokens.setSession({ access_token: 'reset-access-2' } as { access_token: string; refresh_token: string })
+  expect(localStorage.getItem(portalKey)).toBeNull()
+  expect(await portal.refreshSession()).toBe(false)
+  expect(lost).not.toHaveBeenCalled()
+  expect(portal.tokens.access).toBe('reset-access-2')
+})
+
 it('clears only its own key on session loss', async () => {
   server.use(http.post('/api/v1/portal/auth/refresh', () => HttpResponse.json({ error: { code: 'unauthorized', message: 'no' } }, { status: 401 })))
   const portal = createSessionStore({ storageKey: portalKey, base: '/api/v1/portal', refreshPath: '/auth/refresh' })

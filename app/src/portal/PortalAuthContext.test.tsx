@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { REFRESH_KEY } from '../api/client'
+import { exchange } from '../api/portal'
 import { PORTAL_REFRESH_KEY, portal } from '../api/portalClient'
 import { portalFixtures } from '../test/portal'
 import { renderWithProviders } from '../test/render'
@@ -63,6 +64,24 @@ it('is anonymous without a stored token and shows the expiry notice when the tok
   localStorage.setItem(PORTAL_REFRESH_KEY, 'stale')
   renderProbe()
   expect(await screen.findByText('notice:Your session expired. Please sign in again.')).toBeInTheDocument()
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()
+})
+
+it('ends a restored session cleanly when /me is forbidden to it', async () => {
+  server.use(http.get('/api/v1/portal/me', () => HttpResponse.json({ error: { code: 'forbidden', message: 'no' } }, { status: 403 })))
+  localStorage.setItem(PORTAL_REFRESH_KEY, 'prefresh-1')
+  renderProbe()
+  expect(await screen.findByText('status:anonymous')).toBeInTheDocument()
+  expect(screen.getByText('notice:-')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()
+  expect(portal.tokens.access).toBeNull()
+})
+
+it('a reset session from a token exchange is not persisted', async () => {
+  const s = await exchange('good-reset')
+  expect(s.kind).toBe('reset')
+  expect(portal.tokens.access).toBe('paccess-reset')
   expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()
 })
 

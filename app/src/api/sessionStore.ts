@@ -54,10 +54,14 @@ export function createSessionStore<S extends SessionLike = SessionLike>(o: Sessi
     /** The last session response stored (sign-in, exchange or refresh); null once cleared. */
     get session(): S | null { return current },
     getRefresh(): string | null { return safeStorage(() => localStorage.getItem(o.storageKey), null) },
+    /** A session without a refresh token (e.g. a portal reset session) lives in memory only. */
     setSession(s: S): void {
       accessToken = s.access_token
       current = s
-      safeStorage(() => localStorage.setItem(o.storageKey, s.refresh_token), undefined)
+      const refresh = s.refresh_token
+      safeStorage(() => (refresh
+        ? localStorage.setItem(o.storageKey, refresh)
+        : localStorage.removeItem(o.storageKey)), undefined)
     },
     clear(): void {
       generation++

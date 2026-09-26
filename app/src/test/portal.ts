@@ -43,7 +43,8 @@ const exchanges: Record<string, PortalSession> = {
   'good-signin': { ...session, kind: 'signin' },
   'good-access': { ...guestSession, kind: 'access' },
   'good-confirm': { ...session, kind: 'confirm' },
-  'good-reset': { ...session, kind: 'reset' },
+  // A reset session may only set a password: no refresh token, so it cannot survive a reload.
+  'good-reset': { ...session, access_token: 'paccess-reset', refresh_token: '', kind: 'reset' },
 }
 
 export const portalHandlers = [
