@@ -56,3 +56,11 @@ it('a 400 with fields.email shows the error under Email', async () => {
   await fill('Jamie', 'jamie@example.test')
   expect(await screen.findByText('must be a valid email')).toBeInTheDocument()
 })
+
+it('a 429 shows the rate-limit message', async () => {
+  server.use(http.post('/api/v1/portal/auth/register', () =>
+    HttpResponse.json({ error: { code: 'rate_limited', message: 'too many attempts', fields: { retry_after: '600' } } }, { status: 429 })))
+  mount()
+  await fill('Jamie', 'jamie@example.test')
+  expect(await screen.findByText('Too many attempts, try again in 10 minutes')).toBeInTheDocument()
+})

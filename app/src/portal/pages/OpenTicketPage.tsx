@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getReference, openTicket, uploadPortalFile } from '../../api/portal'
-import { ApiError } from '../../api/sessionStore'
 import type { OpenTicketInput, PortalProfile, PortalReference } from '../../api/types'
 import { FileUpload, type PendingFile } from '../../components/FileUpload'
 import { LoadingScreen } from '../../components/LoadingScreen'
@@ -11,6 +10,7 @@ import { Banner, errorMessage } from '../../ui/Banner'
 import { FormActions } from '../../ui/FormActions'
 import { FormTable } from '../../ui/FormTable'
 import { usePortalAuth } from '../PortalAuthContext'
+import { rateLimitMessage } from '../rateLimit'
 import s from './OpenTicketPage.module.css'
 
 const KNOWN = ['name', 'email', 'subject', 'message', 'topic_id', 'dept_id', 'file_ids']
@@ -46,10 +46,7 @@ function OpenTicketForm({ reference, user }: { reference: PortalReference; user:
     onSuccess: (res) => navigate(`/portal/opened/${res.number}`, { state: { id: res.id, anonymous: !user } }),
   })
   const { fields, banner } = splitErrors(m.error, KNOWN)
-  // The API puts retry_after (seconds, as a string) in the 429 envelope's fields.
-  const retryMinutes = m.error instanceof ApiError && m.error.status === 429
-    ? Math.ceil(Number(m.error.fields.retry_after ?? 0) / 60)
-    : null
+  const rateLimited = rateLimitMessage(m.error)
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -70,8 +67,8 @@ function OpenTicketForm({ reference, user }: { reference: PortalReference; user:
   return (
     <form onSubmit={onSubmit} className={s.form}>
       <h2>Open a New Ticket</h2>
-      {retryMinutes !== null
-        ? <Banner level="error">{`Too many attempts, try again in ${retryMinutes} minutes`}</Banner>
+      {rateLimited
+        ? <Banner level="error">{rateLimited}</Banner>
         : (banner ? <Banner level="error">{errorMessage(banner)}</Banner> : null)}
       <FormTable sections={[
         { title: 'Your Information', rows: [

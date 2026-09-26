@@ -6,13 +6,18 @@ import { Banner, errorMessage } from '../../ui/Banner'
 import { Button } from '../../ui/Button'
 import { FormTable } from '../../ui/FormTable'
 import { usePortalAuth } from '../PortalAuthContext'
+import { rateLimitMessage } from '../rateLimit'
 import { CheckEmailPage } from './CheckEmailPage'
 import s from './LoginPage.module.css'
 
-/** 401 must not say which half was wrong; anything else (rate limit, network) is shown as-is. */
+/** 401 must not say which half was wrong; 429 gets the portal's wording; anything else is shown as-is. */
 function signInError(err: unknown): string {
   if (err instanceof ApiError && err.status === 401) return 'Invalid email or password'
-  return errorMessage(err)
+  return requestError(err)
+}
+
+function requestError(err: unknown): string {
+  return rateLimitMessage(err) ?? errorMessage(err)
 }
 
 /** Portal sign-in: password or emailed link on the left, guest ticket access on the right. */
@@ -64,7 +69,7 @@ function SignInForm() {
       await requestLink(email.trim())
       setLinkSent(true)
     } catch (err) {
-      setError(errorMessage(err))
+      setError(requestError(err))
     } finally {
       setBusy(false)
     }
@@ -114,7 +119,7 @@ function GuestForm() {
       await requestAccess(email.trim(), number.trim())
       setSent(true)
     } catch (err) {
-      setError(errorMessage(err))
+      setError(requestError(err))
     } finally {
       setBusy(false)
     }

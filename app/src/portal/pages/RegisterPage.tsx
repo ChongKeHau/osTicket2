@@ -5,6 +5,7 @@ import { splitErrors } from '../../lib/forms'
 import { Banner, errorMessage } from '../../ui/Banner'
 import { FormActions } from '../../ui/FormActions'
 import { FormTable } from '../../ui/FormTable'
+import { rateLimitMessage } from '../rateLimit'
 import { CheckEmailPage } from './CheckEmailPage'
 
 const KNOWN = ['name', 'email']
@@ -35,7 +36,7 @@ export function RegisterPage() {
   return (
     <form onSubmit={onSubmit}>
       <h2>Create an Account</h2>
-      {banner ? <Banner level="error">{errorMessage(banner)}</Banner> : null}
+      {banner ? <Banner level="error">{rateLimitMessage(banner) ?? errorMessage(banner)}</Banner> : null}
       <FormTable sections={[{ title: 'Your Information', rows: [
         { id: 'name', label: 'Name', required: true, error: fields.name,
           control: <input id="name" required autoComplete="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /> },

@@ -23,3 +23,15 @@ it('posts the email to /auth/reset and shows the check-email page', async () => 
   expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/portal/login')
   await waitFor(() => expect(body).toEqual({ email: 'pat@example.test' }))
 })
+
+it('a 429 shows the rate-limit message, never less than one minute', async () => {
+  server.use(http.post('/api/v1/portal/auth/reset', () =>
+    HttpResponse.json({ error: { code: 'rate_limited', message: 'too many attempts', fields: { retry_after: '30' } } }, { status: 429 })))
+  renderWithProviders(
+    <Routes><Route path="/portal/reset" element={<ResetPage />} /></Routes>,
+    { route: '/portal/reset' },
+  )
+  await userEvent.type(screen.getByLabelText(/^email/i), 'pat@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Email me a reset link' }))
+  expect(await screen.findByText('Too many attempts, try again in 1 minutes')).toBeInTheDocument()
+})

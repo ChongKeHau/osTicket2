@@ -30,6 +30,8 @@ function mount(state?: unknown) {
   )
 }
 
+const tooMany = () => HttpResponse.json({ error: { code: 'rate_limited', message: 'too many attempts', fields: { retry_after: '600' } } }, { status: 429 })
+
 const signIn = () => screen.getByRole('region', { name: 'Sign in' })
 const guest = () => screen.getByRole('region', { name: 'Check a ticket as a guest' })
 
@@ -114,4 +116,30 @@ it('the guest form posts { email, number } to /access and shows the check-email 
   await userEvent.click(within(guest()).getByRole('button', { name: 'Email me an access link' }))
   expect(await screen.findByText('If the ticket and email match, we sent an access link')).toBeInTheDocument()
   await waitFor(() => expect(body).toEqual({ email: 'jamie@example.test', number: '000007' }))
+})
+
+it('a 429 on password sign-in shows the rate-limit message', async () => {
+  server.use(http.post('/api/v1/portal/auth/login', tooMany))
+  mount()
+  await fillSignIn('pat@example.test', 'secret123')
+  expect(await screen.findByText('Too many attempts, try again in 10 minutes')).toBeInTheDocument()
+})
+
+it('a 429 on "Email me a sign-in link" shows the rate-limit message', async () => {
+  server.use(http.post('/api/v1/portal/auth/link', tooMany))
+  mount()
+  await screen.findByRole('heading', { name: 'Sign in' })
+  await userEvent.type(within(signIn()).getByLabelText(/^email/i), 'pat@example.test')
+  await userEvent.click(within(signIn()).getByRole('button', { name: 'Email me a sign-in link' }))
+  expect(await within(signIn()).findByText('Too many attempts, try again in 10 minutes')).toBeInTheDocument()
+})
+
+it('a 429 on the guest form shows the rate-limit message', async () => {
+  server.use(http.post('/api/v1/portal/auth/access', tooMany))
+  mount()
+  await screen.findByRole('heading', { name: 'Check a ticket as a guest' })
+  await userEvent.type(within(guest()).getByLabelText(/^email/i), 'jamie@example.test')
+  await userEvent.type(within(guest()).getByLabelText(/ticket number/i), '000007')
+  await userEvent.click(within(guest()).getByRole('button', { name: 'Email me an access link' }))
+  expect(await within(guest()).findByText('Too many attempts, try again in 10 minutes')).toBeInTheDocument()
 })

@@ -4,6 +4,7 @@ import { requestReset } from '../../api/portal'
 import { Banner, errorMessage } from '../../ui/Banner'
 import { FormActions } from '../../ui/FormActions'
 import { FormTable } from '../../ui/FormTable'
+import { rateLimitMessage } from '../rateLimit'
 import { CheckEmailPage } from './CheckEmailPage'
 
 /** Requests a password-reset link; the API answers 202 whether or not the address exists. */
@@ -26,7 +27,7 @@ export function ResetPage() {
   return (
     <form onSubmit={onSubmit}>
       <h2>Reset Your Password</h2>
-      {m.error ? <Banner level="error">{errorMessage(m.error)}</Banner> : null}
+      {m.error ? <Banner level="error">{rateLimitMessage(m.error) ?? errorMessage(m.error)}</Banner> : null}
       <FormTable sections={[{ title: 'Your Account', rows: [
         { id: 'email', label: 'Email', required: true,
           control: <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /> },
