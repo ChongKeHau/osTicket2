@@ -109,9 +109,9 @@ export function NewTicketPage() {
             <option value={0}>Default</option>{priorities.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select> },
           { id: 'subject', label: 'Subject', required: true, error: fields.subject, control: <input id="subject" required maxLength={255} value={form.subject} onChange={(e) => update('subject', e.target.value)} /> },
           { id: 'message', label: 'Message', required: true, error: fields.message, control: <textarea id="message" rows={8} required value={form.message} onChange={(e) => update('message', e.target.value)} /> },
-          { id: 'files', label: 'Attachments', error: fields.file_ids, control: <FileUpload inputId="files" pending={pending} onChange={setPending} /> },
+          { label: 'Attachments', error: fields.file_ids, control: <FileUpload inputId="files" pending={pending} onChange={setPending} /> },
           { id: 'due_at', label: 'Due Date', error: fields.due_at, control: <input id="due_at" type="datetime-local" value={form.due_at} onChange={(e) => update('due_at', e.target.value)} /> },
-          { id: 'source', label: 'Source', control: <select id="source" value={form.source} onChange={(e) => update('source', e.target.value)}>
+          { id: 'source', label: 'Source', error: fields.source, control: <select id="source" value={form.source} onChange={(e) => update('source', e.target.value)}>
             <option value="phone">Phone</option><option value="web">Web</option><option value="api">API</option><option value="other">Other</option></select> },
         ] },
       ]} />

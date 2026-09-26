@@ -59,6 +59,18 @@ test('validation errors map to fields', async () => {
   expect(screen.getByText('email')).toBeInTheDocument()
 })
 
+test('a source validation error renders under the Source select', async () => {
+  server.use(http.post('/api/v1/tickets', () =>
+    HttpResponse.json({ error: { code: 'validation_failed', message: 'request validation failed', fields: { source: 'invalid source' } } }, { status: 422 })))
+  mount()
+  await userEvent.type(await screen.findByLabelText(/^subject/i), 's')
+  await userEvent.type(screen.getByLabelText(/^message/i), 'm')
+  await userEvent.type(screen.getByLabelText(/^email/i), 'a@b.test')
+  await userEvent.click(screen.getByRole('button', { name: /open ticket/i }))
+  const source = await screen.findByLabelText(/^source$/i)
+  expect(within(source.closest('tr') as HTMLElement).getByText('invalid source')).toBeInTheDocument()
+})
+
 test('a /staff failure (data this page never uses) does not block the form', async () => {
   server.use(http.get('/api/v1/staff', () => HttpResponse.json({ error: { code: 'server_error', message: 'boom' } }, { status: 500 })))
   mount()
