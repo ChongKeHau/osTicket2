@@ -68,13 +68,13 @@ func TestStatsRouteDefaults(t *testing.T) {
 
 func TestStatsRouteRejectsBadInput(t *testing.T) {
 	f := &fakeStats{err: apperr.Validation("period", "must be one of 7, 14, 30, 90")}
-	if w := get(router(f), "/api/v1/dashboard/stats?period=10"); w.Code != 422 {
+	if w := get(router(f), "/api/v1/dashboard/stats?period=10"); w.Code != 400 {
 		t.Fatalf("period: %d %s", w.Code, w.Body.String())
 	}
-	if w := get(router(f), "/api/v1/dashboard/stats?start=yesterday"); w.Code != 422 || !strings.Contains(w.Body.String(), "start") {
+	if w := get(router(f), "/api/v1/dashboard/stats?start=yesterday"); w.Code != 400 || !strings.Contains(w.Body.String(), "start") {
 		t.Fatalf("start: %d %s", w.Code, w.Body.String())
 	}
-	if w := get(router(f), "/api/v1/dashboard/stats?period=abc"); w.Code != 422 {
+	if w := get(router(f), "/api/v1/dashboard/stats?period=abc"); w.Code != 400 {
 		t.Fatalf("period text: %d", w.Code)
 	}
 }
