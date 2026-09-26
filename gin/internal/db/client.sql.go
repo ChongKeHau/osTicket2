@@ -10,6 +10,28 @@ import (
 	"time"
 )
 
+const consumeClientRefreshToken = `-- name: ConsumeClientRefreshToken :one
+UPDATE client_refresh_token SET revoked_at = now(), updated_at = now()
+WHERE token_hash = $1 AND revoked_at IS NULL
+RETURNING id, token_hash, end_user_id, ticket_id, expires_at, revoked_at, created_at, updated_at
+`
+
+func (q *Queries) ConsumeClientRefreshToken(ctx context.Context, tokenHash string) (ClientRefreshToken, error) {
+	row := q.db.QueryRow(ctx, consumeClientRefreshToken, tokenHash)
+	var i ClientRefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.EndUserID,
+		&i.TicketID,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const consumeClientToken = `-- name: ConsumeClientToken :one
 UPDATE client_token SET used_at = now()
 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
@@ -446,11 +468,17 @@ func (q *Queries) MarkEndUserVerified(ctx context.Context, id int64) error {
 }
 
 const revokeClientRefreshToken = `-- name: RevokeClientRefreshToken :exec
-UPDATE client_refresh_token SET revoked_at = now(), updated_at = now() WHERE token_hash = $1 AND revoked_at IS NULL
+UPDATE client_refresh_token SET revoked_at = now(), updated_at = now()
+WHERE token_hash = $1 AND end_user_id = $2 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeClientRefreshToken(ctx context.Context, tokenHash string) error {
-	_, err := q.db.Exec(ctx, revokeClientRefreshToken, tokenHash)
+type RevokeClientRefreshTokenParams struct {
+	TokenHash string
+	EndUserID int64
+}
+
+func (q *Queries) RevokeClientRefreshToken(ctx context.Context, arg RevokeClientRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, revokeClientRefreshToken, arg.TokenHash, arg.EndUserID)
 	return err
 }
 
@@ -474,6 +502,20 @@ type SetEndUserPasswordParams struct {
 
 func (q *Queries) SetEndUserPassword(ctx context.Context, arg SetEndUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, setEndUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const setEndUserPasswordHash = `-- name: SetEndUserPasswordHash :exec
+UPDATE end_user SET password_hash = $2, updated_at = now() WHERE id = $1
+`
+
+type SetEndUserPasswordHashParams struct {
+	ID           int64
+	PasswordHash *string
+}
+
+func (q *Queries) SetEndUserPasswordHash(ctx context.Context, arg SetEndUserPasswordHashParams) error {
+	_, err := q.db.Exec(ctx, setEndUserPasswordHash, arg.ID, arg.PasswordHash)
 	return err
 }
 

@@ -13,6 +13,9 @@ UPDATE end_user SET name = $2, updated_at = now() WHERE id = $1 RETURNING *;
 -- name: SetEndUserPassword :exec
 UPDATE end_user SET password_hash = $2, email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE id = $1;
 
+-- name: SetEndUserPasswordHash :exec
+UPDATE end_user SET password_hash = $2, updated_at = now() WHERE id = $1;
+
 -- name: MarkEndUserVerified :exec
 UPDATE end_user SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE id = $1;
 
@@ -30,8 +33,14 @@ INSERT INTO client_refresh_token (token_hash, end_user_id, ticket_id, expires_at
 -- name: GetClientRefreshToken :one
 SELECT * FROM client_refresh_token WHERE token_hash = $1;
 
+-- name: ConsumeClientRefreshToken :one
+UPDATE client_refresh_token SET revoked_at = now(), updated_at = now()
+WHERE token_hash = $1 AND revoked_at IS NULL
+RETURNING *;
+
 -- name: RevokeClientRefreshToken :exec
-UPDATE client_refresh_token SET revoked_at = now(), updated_at = now() WHERE token_hash = $1 AND revoked_at IS NULL;
+UPDATE client_refresh_token SET revoked_at = now(), updated_at = now()
+WHERE token_hash = $1 AND end_user_id = $2 AND revoked_at IS NULL;
 
 -- name: RevokeClientRefreshTokensForUser :exec
 UPDATE client_refresh_token SET revoked_at = now(), updated_at = now() WHERE end_user_id = $1 AND revoked_at IS NULL;
