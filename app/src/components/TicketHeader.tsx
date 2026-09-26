@@ -6,7 +6,6 @@ import { useReferenceData } from '../hooks/useReferenceData'
 import { useTicketMutations } from '../hooks/useTicketMutations'
 import { formatDateTime, fromLocalInput, staffName, toLocalInput } from '../lib/format'
 import { ErrorBanner } from './ErrorBanner'
-import { StatusBadge } from './StatusBadge'
 import styles from './TicketHeader.module.css'
 
 function formFromTicket(ticket: Ticket) {
@@ -48,7 +47,7 @@ export function TicketHeader({ ticket }: { ticket: Ticket }) {
       <dl className={styles.grid}>
         <dt>Requester</dt><dd>{ticket.requester_name} &lt;{ticket.requester_email}&gt;</dd>
         <dt>Status</dt><dd>
-          <StatusBadge state={ticket.state} name={ticket.status.name} />{' '}
+          <span style={{ fontWeight: 600 }}>{ticket.status.name}</span>{' '}
           <select aria-label="Status" value={ticket.status.id} disabled={busy} onChange={(e) => m.setStatus.mutate(Number(e.target.value))}>
             {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>

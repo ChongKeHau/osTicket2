@@ -100,7 +100,7 @@ test('mid-session refresh failure routes to login with the notice', async () => 
   // new request. Clear the cache so navigating to /tickets/new triggers a real GET /topics that
   // hits the 401 override above.
   client.clear()
-  await userEvent.click(screen.getByRole('link', { name: /new ticket/i }))
+  await userEvent.click(screen.getByRole('link', { name: 'New Ticket' }))
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument())
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
 })
