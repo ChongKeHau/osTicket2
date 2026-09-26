@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { listTickets } from '../api/tickets'
 import type { Ticket } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { useReferenceData } from '../hooks/useReferenceData'
+import { useReferenceData, visibleDepartments } from '../hooks/useReferenceData'
 import { useTicketFilters } from '../hooks/useTicketFilters'
 import { formatDate, relativeTime } from '../lib/format'
 import { queueTitle, ticketSubNav } from '../nav'
@@ -24,7 +24,7 @@ export function TicketListPage() {
   const { filter, set } = useTicketFilters()
   const { isAdmin, departmentIds } = useAuth()
   const { departments, statuses, priorities } = useReferenceData()
-  const visibleDepts = departments.filter((d) => isAdmin || departmentIds.includes(d.id))
+  const visibleDepts = visibleDepartments(departments, { isAdmin, departmentIds })
   useSubNav(useMemo(() => ticketSubNav(params), [params]), newTicket)
   const [q, setQ] = useState(filter.q ?? '')
   // Re-sync the search box from the URL when it changes out from under this page (a sub-nav click,

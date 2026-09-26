@@ -22,7 +22,7 @@ export function TemplateListPage() {
       <StickyBar title="Email Templates" count={q.data ? rows.length : undefined} />
       {q.error && <Banner level="error">{errorMessage(q.error)}</Banner>}
       <ListTable columns={columns} rows={rows} rowKey={(t) => t.key} rowHref={(t) => `/admin/email/templates/${encodeURIComponent(t.key)}`}
-        empty={q.isLoading ? 'Loading…' : 'No email templates'} footer={<span>{rows.length} templates</span>} />
+        empty={q.isLoading ? 'Loading…' : 'No email templates'} footer={q.data && <span>{rows.length} templates</span>} />
     </>
   )
 }

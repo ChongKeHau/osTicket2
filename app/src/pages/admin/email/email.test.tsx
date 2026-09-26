@@ -36,6 +36,20 @@ describe('templates list', () => {
     expect(screen.getByRole('link', { name: 'Email' })).toHaveAttribute('aria-current', 'page')
   })
 
+  test('shows the template count in the footer only once the list has loaded', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    server.use(http.get('/api/v1/email/templates', async () => {
+      await gate
+      return HttpResponse.json({ items: emailFixtures.templates })
+    }))
+    renderWithProviders(<App />, { route: '/admin/email/templates' })
+    expect(await screen.findByRole('heading', { name: 'Email Templates' })).toBeInTheDocument()
+    expect(screen.queryByText(/\d+ templates/)).not.toBeInTheDocument()
+    release()
+    expect(await screen.findByText('2 templates')).toBeInTheDocument()
+  })
+
   test('/admin/email redirects to the templates list', async () => {
     renderWithProviders(<App />, { route: '/admin/email' })
     expect(await screen.findByRole('link', { name: 'ticket_autoresp' })).toBeInTheDocument()

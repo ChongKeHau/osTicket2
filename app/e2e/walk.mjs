@@ -48,6 +48,8 @@ await shot('05-admin-form')
 
 await page.getByRole('link', { name: 'Email' }).click()
 await page.getByRole('heading', { name: /Email Templates/ }).waitFor()
+// Row 1 is the "Loading…" placeholder until the list arrives; wait for a real template link.
+await page.getByRole('row').nth(1).getByRole('link').first().waitFor()
 await shot('06-email-templates')
 
 await browser.close()
