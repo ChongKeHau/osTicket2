@@ -1,5 +1,5 @@
 .fig { margin: 0; }
-.svg { width: 100%; height: auto; display: block; }
+.svg { width: 100%; height: auto; display: block; overflow: visible; }
 .grid { stroke: var(--border); stroke-width: 1; }
 .tick { font-size: 11px; fill: var(--text-muted); }
 .legend { list-style: none; display: flex; gap: var(--space-4); padding: 0; margin: var(--space-2) 0 0; }

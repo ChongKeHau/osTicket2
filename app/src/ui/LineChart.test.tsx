@@ -20,3 +20,20 @@ it('renders an all-zero series without NaN', () => {
   expect(container.innerHTML).not.toContain('NaN')
   expect(container.querySelectorAll('text[data-axis="y"]').length).toBeGreaterThan(0)
 })
+
+it('anchors the first and last x labels inside the plot', () => {
+  const labels = Array.from({ length: 30 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')}`)
+  const { container } = render(<LineChart labels={labels} series={[{ label: 'A', points: labels.map(() => 1), color: 'red' }]} />)
+  const xLabels = container.querySelectorAll('text[data-axis="x"]')
+  expect(xLabels[0]).toHaveAttribute('text-anchor', 'start')
+  expect(xLabels[1]).toHaveAttribute('text-anchor', 'middle')
+  expect(xLabels[xLabels.length - 1]).toHaveTextContent('Sep 30')
+  expect(xLabels[xLabels.length - 1]).toHaveAttribute('text-anchor', 'end')
+})
+
+it('uses integer y ticks 0..max for small counts', () => {
+  const { container } = render(<LineChart labels={['2026-09-01', '2026-09-02', '2026-09-03']} series={[{ label: 'A', points: [1, 4, 2], color: 'red' }]} />)
+  const ticks = [...container.querySelectorAll('text[data-axis="y"]')].map((t) => t.textContent)
+  expect(ticks).toEqual(['0', '1', '2', '3', '4'])
+  expect(container.innerHTML).not.toContain('NaN')
+})
