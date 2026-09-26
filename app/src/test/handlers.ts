@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw'
-import { entryFixtures, eventFixtures, referenceFixtures, sessionFixture, staffProfileFixture, ticketFixture } from './fixtures'
+import { dashboardFixture, entryFixtures, eventFixtures, referenceFixtures, sessionFixture, staffProfileFixture, ticketFixture } from './fixtures'
 
 const unauthorized = () => HttpResponse.json({ error: { code: 'unauthorized', message: 'authentication required' } }, { status: 401 })
 
@@ -18,6 +18,7 @@ export const handlers = [
   }),
   http.post('/api/v1/auth/logout', () => new HttpResponse(null, { status: 204 })),
   http.get('/api/v1/me', () => HttpResponse.json(staffProfileFixture)),
+  http.get('/api/v1/dashboard/stats', () => HttpResponse.json(dashboardFixture)),
   http.get('/api/v1/priorities', () => HttpResponse.json({ items: referenceFixtures.priorities })),
   http.get('/api/v1/statuses', () => HttpResponse.json({ items: referenceFixtures.statuses })),
   http.get('/api/v1/departments', () => HttpResponse.json({ items: referenceFixtures.departments })),

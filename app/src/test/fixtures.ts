@@ -1,4 +1,4 @@
-import type { Department, Entry, Event, Priority, Session, Staff, StaffProfile, Status, Ticket, Topic } from '../api/types'
+import type { DashboardStats, Department, Entry, Event, Priority, Session, Staff, StaffProfile, Status, Ticket, Topic } from '../api/types'
 
 export const staffProfileFixture: StaffProfile = {
   id: 1, username: 'agent', email: 'agent@example.test', first_name: 'Ann', last_name: 'Agent',
@@ -56,4 +56,26 @@ export const adminFixtures = {
     ...referenceFixtures.staff,
     { id: 4, username: 'old', email: 'old@example.test', first_name: 'Olive', last_name: 'Old', is_admin: false, is_active: false, primary_dept_id: 2, department_ids: [2] },
   ] as Staff[],
+}
+
+export const dashboardFixture: DashboardStats = {
+  start: '2026-09-01', period: 7,
+  series: [
+    { date: '2026-09-01', opened: 3, assigned: 1, closed: 0, reopened: 0 },
+    { date: '2026-09-02', opened: 1, assigned: 2, closed: 1, reopened: 0 },
+    { date: '2026-09-03', opened: 0, assigned: 0, closed: 2, reopened: 1 },
+    { date: '2026-09-04', opened: 2, assigned: 1, closed: 0, reopened: 0 },
+    { date: '2026-09-05', opened: 0, assigned: 0, closed: 0, reopened: 0 },
+    { date: '2026-09-06', opened: 0, assigned: 0, closed: 0, reopened: 0 },
+    { date: '2026-09-07', opened: 1, assigned: 0, closed: 1, reopened: 0 },
+  ],
+  by_department: [
+    { id: 1, name: 'Support', opened: 5, assigned: 3, closed: 3, reopened: 1 },
+    { id: 2, name: 'Billing', opened: 2, assigned: 1, closed: 1, reopened: 0 },
+  ],
+  by_topic: [{ id: null, name: '— none —', opened: 7, assigned: 4, closed: 4, reopened: 1 }],
+  by_staff: [
+    { id: 1, name: 'Ann Agent', opened: 4, assigned: 3, closed: 3, reopened: 1 },
+    { id: null, name: '— system —', opened: 3, assigned: 1, closed: 1, reopened: 0 },
+  ],
 }

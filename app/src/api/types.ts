@@ -59,3 +59,11 @@ export interface ReplyInput { body: string; format: 'html' | 'text'; status_id?:
 export interface NoteInput { title?: string; body: string; format: 'html' | 'text'; file_ids?: number[] }
 
 export interface ApiErrorBody { error: { code: string; message: string; fields?: Record<string, string> } }
+
+export interface DashboardPoint { date: string; opened: number; assigned: number; closed: number; reopened: number }
+/** One breakdown row; `id` is null for the "— none —" topic and "— system —" staff rows. */
+export interface DashboardRow { id: number | null; name: string; opened: number; assigned: number; closed: number; reopened: number }
+export interface DashboardStats {
+  start: string; period: number; series: DashboardPoint[]
+  by_department: DashboardRow[]; by_topic: DashboardRow[]; by_staff: DashboardRow[]
+}
