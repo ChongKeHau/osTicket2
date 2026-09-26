@@ -23,7 +23,9 @@ function mount(route = '/portal/tickets/7', refresh = 'prefresh-1') {
         <Route path="/portal" element={<PortalShell />}>
           <Route element={<RequirePortalUser />}>
             <Route path="tickets/:id" element={<TicketPage />} />
+            <Route path="tickets" element={<h2>List page</h2>} />
           </Route>
+          <Route index element={<h2>Home page</h2>} />
         </Route>
       </Routes>
     </PortalAuthProvider>,
@@ -137,4 +139,23 @@ it('lets a guest session view and reply without a My Tickets link', async () => 
 it('shows Ticket not found for an unknown ticket', async () => {
   mount('/portal/tickets/99')
   expect(await screen.findByRole('alert')).toHaveTextContent('Ticket not found')
+})
+
+it('a reply to a ticket that has gone flashes Ticket not found and returns to the list', async () => {
+  server.use(http.post(`${P}/tickets/7/reply`, () => HttpResponse.json({ error: { code: 'not_found', message: 'ticket not found' } }, { status: 404 })))
+  const { client } = mount()
+  await userEvent.type(await screen.findByLabelText('Reply'), 'Hello?')
+  await userEvent.click(screen.getByRole('button', { name: 'Post Reply' }))
+  expect(await screen.findByRole('heading', { name: 'List page' })).toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('Ticket not found')
+  expect(client.getQueryData(['portal', 'ticket', 7])).toBeUndefined()
+})
+
+it('a close on a ticket that has gone sends a guest to the portal home', async () => {
+  server.use(http.post(`${P}/tickets/7/close`, () => HttpResponse.json({ error: { code: 'not_found', message: 'ticket not found' } }, { status: 404 })))
+  mount('/portal/tickets/7', 'prefresh-guest-1')
+  await userEvent.click(await screen.findByRole('button', { name: 'Close ticket' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+  expect(await screen.findByRole('heading', { name: 'Home page' })).toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('Ticket not found')
 })

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { closeTicket, getMyTicket, reopenTicket, replyTicket, uploadPortalFile } from '../../api/portal'
 import type { PortalTicket } from '../../api/types'
@@ -11,6 +11,7 @@ import { parseId } from '../../lib/forms'
 import { Banner, errorMessage } from '../../ui/Banner'
 import { useBanner } from '../../ui/BannerContext'
 import { Button } from '../../ui/Button'
+import { usePortalAuth } from '../PortalAuthContext'
 import { PortalThread } from './PortalThread'
 import s from './TicketPage.module.css'
 
@@ -23,6 +24,24 @@ function useInvalidate(id: number) {
     qc.invalidateQueries({ queryKey: ticketKey(id) }),
     qc.invalidateQueries({ queryKey: ['portal', 'tickets'] }),
   ])
+}
+
+/** Handles an action's error: a 404 means the ticket is gone or out of reach, so flash, drop
+ *  the cached ticket and leave for the list (a guest, who cannot list, goes to the portal home). */
+function useActionError(id: number) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { flash } = useBanner()
+  const { isGuest } = usePortalAuth()
+  return (err: unknown) => {
+    if (err instanceof ApiError && err.status === 404) {
+      flash('error', 'Ticket not found')
+      navigate(isGuest ? '/portal' : '/portal/tickets')
+      qc.removeQueries({ queryKey: ticketKey(id) })
+      return
+    }
+    flash('error', errorMessage(err))
+  }
 }
 
 export function TicketPage() {
@@ -60,6 +79,7 @@ function StatusControl({ ticket }: { ticket: PortalTicket }) {
   const qc = useQueryClient()
   const invalidate = useInvalidate(ticket.id)
   const { flash } = useBanner()
+  const onError = useActionError(ticket.id)
   const [confirming, setConfirming] = useState(false)
   const closed = ticket.state === 'closed'
   const change = useMutation({
@@ -69,7 +89,7 @@ function StatusControl({ ticket }: { ticket: PortalTicket }) {
       flash('notice', closed ? 'Ticket reopened' : 'Ticket closed')
       await invalidate()
     },
-    onError: (err) => flash('error', errorMessage(err)),
+    onError,
     onSettled: () => setConfirming(false),
   })
 
@@ -86,6 +106,7 @@ function StatusControl({ ticket }: { ticket: PortalTicket }) {
 function ReplyForm({ ticket }: { ticket: PortalTicket }) {
   const invalidate = useInvalidate(ticket.id)
   const { flash } = useBanner()
+  const onError = useActionError(ticket.id)
   const [body, setBody] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fields, setFields] = useState<Record<string, string>>({})
@@ -100,7 +121,7 @@ function ReplyForm({ ticket }: { ticket: PortalTicket }) {
       await replyTicket(ticket.id, { body, format: 'text', file_ids: fileIds })
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.fields).length > 0) setFields(err.fields)
-      else flash('error', errorMessage(err))
+      else onError(err)
       return
     } finally { setBusy(false) }
     setBody(''); setFiles([])
