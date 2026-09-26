@@ -58,6 +58,20 @@ export interface UpdateTicketInput {
 export interface ReplyInput { body: string; format: 'html' | 'text'; status_id?: number; file_ids?: number[] }
 export interface NoteInput { title?: string; body: string; format: 'html' | 'text'; file_ids?: number[] }
 
+export interface EmailTemplate { key: string; subject: string; body_html: string; body_text: string; updated_at: string }
+export interface TemplateInput { subject?: string; body_html?: string; body_text?: string }
+export type OutboxStatus = 'pending' | 'sent' | 'failed'
+export interface OutboxItem {
+  id: number; ticket_id: number; entry_id: number | null; template_key: string; to_address: string; to_name: string
+  subject: string; status: OutboxStatus; attempts: number; last_error: string | null; next_attempt_at: string
+  sent_at: string | null; created_at: string
+}
+export type InboundOutcome = 'created' | 'replied' | 'ignored'
+export interface InboundItem {
+  id: number; message_id: string; from_address: string; from_name: string; subject: string
+  ticket_id: number | null; entry_id: number | null; outcome: InboundOutcome; reason: string; received_at: string
+}
+
 export interface ApiErrorBody { error: { code: string; message: string; fields?: Record<string, string> } }
 
 export interface DashboardPoint { date: string; opened: number; assigned: number; closed: number; reopened: number }

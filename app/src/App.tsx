@@ -4,6 +4,10 @@ import { RequireAdmin } from './auth/RequireAdmin'
 import { RequireAuth } from './auth/RequireAuth'
 import { DepartmentFormPage } from './pages/admin/DepartmentFormPage'
 import { DepartmentListPage } from './pages/admin/DepartmentListPage'
+import { InboundPage } from './pages/admin/email/InboundPage'
+import { OutboxPage } from './pages/admin/email/OutboxPage'
+import { TemplateFormPage } from './pages/admin/email/TemplateFormPage'
+import { TemplateListPage } from './pages/admin/email/TemplateListPage'
 import { StaffFormPage } from './pages/admin/StaffFormPage'
 import { StaffListPage } from './pages/admin/StaffListPage'
 import { TopicFormPage } from './pages/admin/TopicFormPage'
@@ -42,9 +46,10 @@ export default function App() {
               <Route path="/admin/staff/new" element={<StaffFormPage />} />
               <Route path="/admin/staff/:id" element={<StaffFormPage />} />
               <Route path="/admin/email" element={<Navigate to="/admin/email/templates" replace />} />
-              <Route path="/admin/email/templates" element={<h2>Email Templates</h2>} />
-              <Route path="/admin/email/outbox" element={<h2>Outbox</h2>} />
-              <Route path="/admin/email/inbound" element={<h2>Inbound Log</h2>} />
+              <Route path="/admin/email/templates" element={<TemplateListPage />} />
+              <Route path="/admin/email/templates/:key" element={<TemplateFormPage />} />
+              <Route path="/admin/email/outbox" element={<OutboxPage />} />
+              <Route path="/admin/email/inbound" element={<InboundPage />} />
             </Route>
           </Route>
           <Route element={<AppShell panel="agent" />}>
