@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { ApiError } from '../api/client'
 import s from './Banner.module.css'
 
@@ -12,10 +12,10 @@ export function errorMessage(err: unknown): string {
   return 'Something went wrong'
 }
 
-export function Banner({ level, children, onDismiss }: { level: BannerLevel; children: ReactNode; onDismiss?: () => void }) {
+export function Banner({ level, children, onDismiss, ref }: { level: BannerLevel; children: ReactNode; onDismiss?: () => void; ref?: Ref<HTMLDivElement> }) {
   const role = level === 'error' || level === 'warning' ? 'alert' : 'status'
   return (
-    <div role={role} className={`${s.banner} ${s[level]}`}>
+    <div ref={ref} role={role} className={`${s.banner} ${s[level]}`}>
       <span aria-hidden="true" className={s.glyph}>{GLYPH[level]}</span>
       <div className={s.body}>{children}</div>
       {onDismiss && <button type="button" className={s.close} aria-label="Dismiss" onClick={onDismiss}>×</button>}
