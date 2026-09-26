@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -67,12 +68,46 @@ type Service struct {
 	baseURL    string
 	siteName   string
 	now        func() time.Time
+	// run executes the account-mail work behind Register, RequestLink,
+	// RequestReset and RequestAccess after the handler has already answered,
+	// so response time never depends on whether an address or ticket exists.
+	// Tests replace it with a synchronous call.
+	run func(fn func(ctx context.Context))
+}
+
+// backgroundTimeout bounds one piece of background account-mail work.
+const backgroundTimeout = 15 * time.Second
+
+// runInBackground is the default Service.run: a goroutine with its own
+// deadline, detached from the request, with panics logged rather than fatal.
+func runInBackground(fn func(ctx context.Context)) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("portal background task panicked", "panic", r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), backgroundTimeout)
+		defer cancel()
+		fn(ctx)
+	}()
+}
+
+// background schedules work through s.run and logs its failure. The log
+// carries the operation name and error only: never the address or a token.
+func (s *Service) background(op string, work func(ctx context.Context) error) {
+	s.run(func(ctx context.Context) {
+		if err := work(ctx); err != nil {
+			slog.Error("portal account mail failed", "op", op, "err", err)
+		}
+	})
 }
 
 func NewService(b db.Beginner, tokens *Tokens, refreshTTL time.Duration, notifier mail.Notifier, baseURL, siteName string) *Service {
 	return &Service{
 		b: b, tokens: tokens, refreshTTL: refreshTTL, notifier: notifier,
 		baseURL: strings.TrimRight(baseURL, "/"), siteName: siteName, now: time.Now,
+		run: runInBackground,
 	}
 }
 
@@ -157,17 +192,22 @@ func (s *Service) mailToken(ctx context.Context, q *db.Queries, u db.EndUser, ki
 	return s.sendLink(ctx, q, u, key, raw, ticketID, vars)
 }
 
-// Register creates (or reuses) the address's end user and mails a confirm
-// link; following it opens a session that sets the password. An address that
-// already has a password is a conflict.
-func (s *Service) Register(ctx context.Context, in RegisterInput) error {
+// Register schedules the account start in the background and reports nothing:
+// it creates (or reuses) the address's end user and mails a confirm link,
+// whose session sets the password. An address that already has a password
+// gets no mail, so the caller cannot tell the two cases apart.
+func (s *Service) Register(in RegisterInput) {
+	s.background("register", func(ctx context.Context) error { return s.register(ctx, in) })
+}
+
+func (s *Service) register(ctx context.Context, in RegisterInput) error {
 	return db.WithTx(ctx, s.b, func(q *db.Queries) error {
 		u, err := s.UpsertByEmail(ctx, q, in.Email, in.Name)
 		if err != nil {
 			return err
 		}
 		if u.PasswordHash != nil {
-			return apperr.ErrConflict
+			return nil
 		}
 		return s.mailToken(ctx, q, u, db.ClientTokenKindConfirm, confirmTTL, "client_confirm", nil, mail.Vars{})
 	})
@@ -210,19 +250,30 @@ func (s *Service) requestByEmail(ctx context.Context, email string, kind db.Clie
 	})
 }
 
-// RequestLink mails a sign-in link to a known address.
-func (s *Service) RequestLink(ctx context.Context, email string) error {
-	return s.requestByEmail(ctx, email, db.ClientTokenKindSignin, signinTTL, "client_signin_link")
+// RequestLink schedules a sign-in link for a known address; unknown addresses get nothing.
+func (s *Service) RequestLink(email string) {
+	s.background("signin_link", func(ctx context.Context) error {
+		return s.requestByEmail(ctx, email, db.ClientTokenKindSignin, signinTTL, "client_signin_link")
+	})
 }
 
-// RequestReset mails a password-reset link to a known address.
-func (s *Service) RequestReset(ctx context.Context, email string) error {
-	return s.requestByEmail(ctx, email, db.ClientTokenKindReset, resetTTL, "client_reset")
+// RequestReset schedules a password-reset link for a known address; unknown addresses get nothing.
+func (s *Service) RequestReset(email string) {
+	s.background("reset_link", func(ctx context.Context) error {
+		return s.requestByEmail(ctx, email, db.ClientTokenKindReset, resetTTL, "client_reset")
+	})
 }
 
-// RequestAccess mails a guest access link for the ticket numbered number when
-// email is its requester; otherwise it silently does nothing.
-func (s *Service) RequestAccess(ctx context.Context, email, number string) error {
+// RequestAccess schedules a guest access link for the ticket numbered number
+// when email is its requester; otherwise nothing is sent.
+func (s *Service) RequestAccess(email, number string) {
+	s.background("access_link", func(ctx context.Context) error { return s.requestAccess(ctx, email, number) })
+}
+
+// requestAccess mails the access link and, when the ticket has no end user
+// yet, claims it for the requester (atomically: a ticket that gained a user
+// meanwhile keeps it).
+func (s *Service) requestAccess(ctx context.Context, email, number string) error {
 	email = strings.TrimSpace(email)
 	return db.WithTx(ctx, s.b, func(q *db.Queries) error {
 		id, err := q.GetTicketIDByNumberAndEmail(ctx, db.GetTicketIDByNumberAndEmailParams{Number: strings.TrimSpace(number), Lower: email})
@@ -240,14 +291,8 @@ func (s *Service) RequestAccess(ctx context.Context, email, number string) error
 		if err != nil {
 			return err
 		}
-		pt, err := q.GetPortalTicket(ctx, id)
-		if err != nil {
+		if err := q.ClaimTicketUser(ctx, db.ClaimTicketUserParams{ID: id, UserID: &u.ID}); err != nil {
 			return err
-		}
-		if pt.UserID == nil {
-			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: &u.ID}); err != nil {
-				return err
-			}
 		}
 		vars := mail.Vars{Number: t.Number, Subject: t.Subject, RequesterName: t.RequesterName}
 		return s.mailToken(ctx, q, u, db.ClientTokenKindAccess, accessTTL, "client_access_link", &id, vars)

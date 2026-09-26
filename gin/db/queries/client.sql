@@ -42,6 +42,9 @@ WHERE token_hash = $1 AND end_user_id = $2 AND revoked_at IS NULL;
 -- name: RevokeClientRefreshTokensForUser :exec
 UPDATE client_refresh_token SET revoked_at = now(), updated_at = now() WHERE end_user_id = $1 AND revoked_at IS NULL;
 
+-- name: ClaimTicketUser :exec
+UPDATE ticket SET user_id = $2 WHERE id = $1 AND user_id IS NULL;
+
 -- name: SetTicketUser :exec
 UPDATE ticket SET user_id = $2 WHERE id = $1;
 

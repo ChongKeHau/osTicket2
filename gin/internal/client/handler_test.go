@@ -20,13 +20,16 @@ type fakeIdentity struct {
 	mailed   []string
 	password []Principal
 	logout   []string
+	// scheduled counts background requests handed to the service.
+	scheduled int
 }
 
-func (f *fakeIdentity) Register(_ context.Context, in RegisterInput) error {
-	if f.known[in.Email] {
-		return apperr.ErrConflict
+// Register mirrors the service: an address that already has an account gets no mail.
+func (f *fakeIdentity) Register(in RegisterInput) {
+	f.scheduled++
+	if !f.known[in.Email] {
+		f.mailed = append(f.mailed, "register:"+in.Email)
 	}
-	return nil
 }
 
 func (f *fakeIdentity) Login(_ context.Context, email, password string) (*Session, error) {
@@ -36,22 +39,17 @@ func (f *fakeIdentity) Login(_ context.Context, email, password string) (*Sessio
 	return nil, apperr.ErrUnauthorized
 }
 
-func (f *fakeIdentity) mail(kind, email string) error {
+// mail records a scheduled request; only known addresses get mail.
+func (f *fakeIdentity) mail(kind, email string) {
+	f.scheduled++
 	if f.known[email] {
 		f.mailed = append(f.mailed, kind+":"+email)
 	}
-	return nil // unknown addresses are not an error
 }
 
-func (f *fakeIdentity) RequestLink(_ context.Context, email string) error {
-	return f.mail("link", email)
-}
-func (f *fakeIdentity) RequestReset(_ context.Context, email string) error {
-	return f.mail("reset", email)
-}
-func (f *fakeIdentity) RequestAccess(_ context.Context, email, number string) error {
-	return f.mail("access#"+number, email)
-}
+func (f *fakeIdentity) RequestLink(email string)           { f.mail("link", email) }
+func (f *fakeIdentity) RequestReset(email string)          { f.mail("reset", email) }
+func (f *fakeIdentity) RequestAccess(email, number string) { f.mail("access#"+number, email) }
 
 func (f *fakeIdentity) Exchange(_ context.Context, raw string) (*Session, error) {
 	if raw == "good" {
@@ -132,20 +130,31 @@ func decodeErr(t *testing.T, w *httptest.ResponseRecorder) envelope {
 
 func TestHandlerRequestsAlwaysAccepted(t *testing.T) {
 	h := newHarness(100)
-	cases := []struct{ path, body string }{
-		{"/portal/auth/link", `{"email":"pat@x.test"}`},
-		{"/portal/auth/link", `{"email":"ghost@x.test"}`},
-		{"/portal/auth/reset", `{"email":"pat@x.test"}`},
-		{"/portal/auth/reset", `{"email":"ghost@x.test"}`},
-		{"/portal/access", `{"email":"pat@x.test","number":"100001"}`},
-		{"/portal/access", `{"email":"ghost@x.test","number":"100001"}`},
+	// Known and unknown addresses get byte-identical responses; register
+	// answers 201 even for an address that already has an account.
+	cases := []struct {
+		path, known, unknown string
+		status               int
+	}{
+		{"/portal/auth/link", `{"email":"pat@x.test"}`, `{"email":"ghost@x.test"}`, http.StatusAccepted},
+		{"/portal/auth/reset", `{"email":"pat@x.test"}`, `{"email":"ghost@x.test"}`, http.StatusAccepted},
+		{"/portal/access", `{"email":"pat@x.test","number":"100001"}`, `{"email":"ghost@x.test","number":"100001"}`, http.StatusAccepted},
+		{"/portal/auth/register", `{"email":"pat@x.test","name":"Pat"}`, `{"email":"ghost@x.test","name":"Ghost"}`, http.StatusCreated},
 	}
 	for _, c := range cases {
-		if w := h.call(http.MethodPost, c.path, "", c.body); w.Code != http.StatusAccepted || w.Body.String() != "{}" {
-			t.Fatalf("%s %s: %d %s", c.path, c.body, w.Code, w.Body.String())
+		wk := h.call(http.MethodPost, c.path, "", c.known)
+		wu := h.call(http.MethodPost, c.path, "", c.unknown)
+		if wk.Code != c.status || wu.Code != c.status || wk.Body.String() != "{}" || wu.Body.String() != "{}" {
+			t.Fatalf("%s: known %d %s, unknown %d %s", c.path, wk.Code, wk.Body.String(), wu.Code, wu.Body.String())
+		}
+		if len(wk.Header()) != len(wu.Header()) {
+			t.Fatalf("%s: headers differ %v vs %v", c.path, wk.Header(), wu.Header())
 		}
 	}
-	want := []string{"link:pat@x.test", "reset:pat@x.test", "access#100001:pat@x.test"}
+	if h.svc.scheduled != 8 {
+		t.Fatalf("scheduled %d requests, want 8", h.svc.scheduled)
+	}
+	want := []string{"link:pat@x.test", "reset:pat@x.test", "access#100001:pat@x.test", "register:ghost@x.test"}
 	if strings.Join(h.svc.mailed, ",") != strings.Join(want, ",") {
 		t.Fatalf("mailed %v", h.svc.mailed)
 	}
@@ -185,13 +194,38 @@ func TestHandlerRateLimit(t *testing.T) {
 	if w.Code != 429 || e.Error.Code != "rate_limited" || e.Error.Fields["retry_after"] == "" || e.Error.Fields["retry_after"] == "0" {
 		t.Fatalf("second: %d %s", w.Code, w.Body.String())
 	}
-	if len(h.svc.mailed) != 1 {
-		t.Fatalf("rate-limited request reached the service: %v", h.svc.mailed)
+	if h.svc.scheduled != 1 {
+		t.Fatalf("rate-limited request reached the service: %d", h.svc.scheduled)
 	}
 	// Login shares the budget and is checked before the password.
 	w = h.call(http.MethodPost, "/portal/auth/login", "", `{"email":"pat@x.test","password":"secret123"}`)
 	if w.Code != 429 {
 		t.Fatalf("login over budget: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandlerRegisterRateLimited(t *testing.T) {
+	h := newHarness(1)
+	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"new@x.test","name":"New"}`); w.Code != 201 {
+		t.Fatalf("first: %d %s", w.Code, w.Body.String())
+	}
+	// Same address from another IP: the per-address budget trips.
+	req := httptest.NewRequest(http.MethodPost, "/portal/auth/register", strings.NewReader(`{"email":"NEW@x.test","name":"New"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.9:1234"
+	w := httptest.NewRecorder()
+	h.r.ServeHTTP(w, req)
+	e := decodeErr(t, w)
+	if w.Code != 429 || e.Error.Code != "rate_limited" || e.Error.Fields["retry_after"] == "" {
+		t.Fatalf("second by address: %d %s", w.Code, w.Body.String())
+	}
+	// Another address from the first IP: the per-IP budget trips.
+	w = h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"other@x.test","name":"O"}`)
+	if w.Code != 429 {
+		t.Fatalf("second by ip: %d %s", w.Code, w.Body.String())
+	}
+	if h.svc.scheduled != 1 {
+		t.Fatalf("rate-limited registration reached the service: %d", h.svc.scheduled)
 	}
 }
 
@@ -207,11 +241,8 @@ func TestHandlerExchangeRegisterRefresh(t *testing.T) {
 	if w := h.call(http.MethodPost, "/portal/auth/exchange", "", `{}`); w.Code != 400 {
 		t.Fatalf("missing token: %d", w.Code)
 	}
-	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"new@x.test","name":"New"}`); w.Code != 201 {
-		t.Fatalf("register: %d %s", w.Code, w.Body.String())
-	}
-	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"pat@x.test","name":"Pat"}`); w.Code != 409 {
-		t.Fatalf("register taken: %d %s", w.Code, w.Body.String())
+	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"new@x.test"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["name"] == "" {
+		t.Fatalf("register without name: %d %s", w.Code, w.Body.String())
 	}
 	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"nope","name":"N"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["email"] == "" {
 		t.Fatalf("register bad email: %d %s", w.Code, w.Body.String())

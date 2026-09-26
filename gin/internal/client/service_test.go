@@ -34,7 +34,34 @@ func (r *recordingNotifier) last(t *testing.T) mail.Notification {
 func newSvc(t *testing.T) (*Service, *recordingNotifier, pgx.Tx) {
 	tx := testutil.Tx(t)
 	n := &recordingNotifier{}
-	return NewService(tx, NewTokens(secret, 15*time.Minute), 24*time.Hour, n, "https://desk.test", "Desk"), n, tx
+	svc := NewService(tx, NewTokens(secret, 15*time.Minute), 24*time.Hour, n, "https://desk.test", "Desk")
+	svc.run = func(fn func(ctx context.Context)) { fn(context.Background()) } // synchronous: the tx is not concurrency-safe
+	return svc, n, tx
+}
+
+func TestDefaultRunIsDetachedWithDeadline(t *testing.T) {
+	svc := NewService(nil, NewTokens(secret, time.Minute), time.Hour, mail.Disabled{}, "https://desk.test", "Desk")
+	done := make(chan time.Duration, 1)
+	svc.run(func(ctx context.Context) {
+		dl, ok := ctx.Deadline()
+		if !ok {
+			done <- -1
+			return
+		}
+		done <- time.Until(dl)
+	})
+	select {
+	case left := <-done:
+		if left <= 0 || left > backgroundTimeout {
+			t.Fatalf("background deadline %v", left)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("background work never ran")
+	}
+	// A panicking task is recovered, not fatal to the process.
+	ran := make(chan struct{})
+	svc.run(func(context.Context) { defer close(ran); panic("boom") })
+	<-ran
 }
 
 // rawFromLink extracts the raw token from https://desk.test/portal/t/<raw>.
@@ -54,9 +81,7 @@ func shift(svc *Service, d time.Duration) {
 func TestRegisterConfirmLogin(t *testing.T) {
 	svc, n, _ := newSvc(t)
 	ctx := context.Background()
-	if err := svc.Register(ctx, RegisterInput{Email: "Pat@Example.test", Name: "Pat"}); err != nil {
-		t.Fatal(err)
-	}
+	svc.Register(RegisterInput{Email: "Pat@Example.test", Name: "Pat"})
 	if len(n.sent) != 1 || n.sent[0].TemplateKey != "client_confirm" || n.sent[0].TicketID != nil {
 		t.Fatalf("mail %+v", n.sent)
 	}
@@ -99,9 +124,8 @@ func TestRegisterConfirmLogin(t *testing.T) {
 	if _, err := svc.Login(ctx, "nobody@example.test", "secret123"); !errors.Is(err, apperr.ErrUnauthorized) {
 		t.Fatal("unknown address accepted")
 	}
-	if err := svc.Register(ctx, RegisterInput{Email: "pat@EXAMPLE.test", Name: "Pat"}); !errors.Is(err, apperr.ErrConflict) {
-		t.Fatalf("second registration: %v", err)
-	}
+	// An address that already has a password gets no mail and no error.
+	svc.Register(RegisterInput{Email: "pat@EXAMPLE.test", Name: "Pat"})
 	if len(n.sent) != 1 {
 		t.Fatalf("conflicting registration sent mail: %+v", n.sent)
 	}
@@ -138,9 +162,7 @@ func TestRegisterAttachesToAnonymousUser(t *testing.T) {
 	if anon.PasswordHash != nil {
 		t.Fatal("anonymous user has a password")
 	}
-	if err := svc.Register(ctx, RegisterInput{Email: "A@X.test", Name: "Alice"}); err != nil {
-		t.Fatal(err)
-	}
+	svc.Register(RegisterInput{Email: "A@X.test", Name: "Alice"})
 	if len(n.sent) != 1 || n.sent[0].TemplateKey != "client_confirm" || n.sent[0].To[0].Address != "a@x.test" {
 		t.Fatalf("mail %+v", n.sent)
 	}
@@ -159,9 +181,8 @@ func TestRegisterAttachesToAnonymousUser(t *testing.T) {
 	if _, err := svc.Login(ctx, "a@x.test", "secret123"); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if err := svc.Register(ctx, RegisterInput{Email: "a@x.test", Name: "A"}); !errors.Is(err, apperr.ErrConflict) {
-		t.Fatalf("second register: %v", err)
-	}
+	// An address that already has a password gets no mail and no error.
+	svc.Register(RegisterInput{Email: "a@x.test", Name: "A"})
 	if len(n.sent) != 1 {
 		t.Fatalf("conflicting register sent mail: %+v", n.sent)
 	}
@@ -170,16 +191,15 @@ func TestRegisterAttachesToAnonymousUser(t *testing.T) {
 func TestSigninLinkFlow(t *testing.T) {
 	svc, n, tx := newSvc(t)
 	ctx := context.Background()
-	if err := svc.RequestLink(ctx, "ghost@x.test"); err != nil || len(n.sent) != 0 {
-		t.Fatalf("unknown address: %v %+v", err, n.sent)
+	svc.RequestLink("ghost@x.test")
+	if len(n.sent) != 0 {
+		t.Fatalf("unknown address: %+v", n.sent)
 	}
 	u, err := svc.UpsertByEmail(ctx, db.New(tx), "link@x.test", "Lin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RequestLink(ctx, "LINK@x.test"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestLink("LINK@x.test")
 	m := n.last(t)
 	if m.TemplateKey != "client_signin_link" || m.TicketID != nil || m.To[0].Address != "link@x.test" {
 		t.Fatalf("mail %+v", m)
@@ -232,15 +252,15 @@ func TestGuestSessionScopedToTicket(t *testing.T) {
 	t1 := insertTicket(t, tx, "910001", "Pat Guest", "pat@guest.test")
 	insertTicket(t, tx, "910002", "Pat Guest", "pat@guest.test")
 
-	if err := svc.RequestAccess(ctx, "someone@else.test", "910001"); err != nil || len(n.sent) != 0 {
-		t.Fatalf("wrong email: %v %+v", err, n.sent)
+	svc.RequestAccess("someone@else.test", "910001")
+	if len(n.sent) != 0 {
+		t.Fatalf("wrong email: %+v", n.sent)
 	}
-	if err := svc.RequestAccess(ctx, "pat@guest.test", "999999"); err != nil || len(n.sent) != 0 {
-		t.Fatalf("unknown number: %v %+v", err, n.sent)
+	svc.RequestAccess("pat@guest.test", "999999")
+	if len(n.sent) != 0 {
+		t.Fatalf("unknown number: %+v", n.sent)
 	}
-	if err := svc.RequestAccess(ctx, "PAT@guest.test", "910001"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestAccess("PAT@guest.test", "910001")
 	// The ticket had no user; the access request claims it for the requester.
 	pt, err := db.New(tx).GetPortalTicket(ctx, t1)
 	if err != nil || pt.UserID == nil {
@@ -273,9 +293,7 @@ func TestGuestSessionScopedToTicket(t *testing.T) {
 	if err := db.New(tx).SetTicketUser(ctx, db.SetTicketUserParams{ID: t3, UserID: &other.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RequestAccess(ctx, "pat@guest.test", "910003"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestAccess("pat@guest.test", "910003")
 	if pt3, err := db.New(tx).GetPortalTicket(ctx, t3); err != nil || pt3.UserID == nil || *pt3.UserID != other.ID {
 		t.Fatalf("existing ticket user overwritten %+v %v", pt3, err)
 	}
@@ -291,17 +309,11 @@ func TestGuestSessionScopedToTicket(t *testing.T) {
 func TestTokenExpiry(t *testing.T) {
 	svc, n, _ := newSvc(t)
 	ctx := context.Background()
-	if err := svc.Register(ctx, RegisterInput{Email: "exp@x.test", Name: "Exp"}); err != nil {
-		t.Fatal(err)
-	}
+	svc.Register(RegisterInput{Email: "exp@x.test", Name: "Exp"})
 	confirm := rawFromLink(t, n.last(t).Vars.Link)
-	if err := svc.RequestLink(ctx, "exp@x.test"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestLink("exp@x.test")
 	signin := rawFromLink(t, n.last(t).Vars.Link)
-	if err := svc.RequestLink(ctx, "exp@x.test"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestLink("exp@x.test")
 	signinFresh := rawFromLink(t, n.last(t).Vars.Link)
 
 	shift(svc, 2*time.Hour)
@@ -326,16 +338,15 @@ func TestTokenExpiry(t *testing.T) {
 func TestResetFlow(t *testing.T) {
 	svc, n, tx := newSvc(t)
 	ctx := context.Background()
-	if err := svc.RequestReset(ctx, "ghost@x.test"); err != nil || len(n.sent) != 0 {
-		t.Fatalf("unknown address: %v %+v", err, n.sent)
+	svc.RequestReset("ghost@x.test")
+	if len(n.sent) != 0 {
+		t.Fatalf("unknown address: %+v", n.sent)
 	}
 	u, err := svc.UpsertByEmail(ctx, db.New(tx), "reset@x.test", "Rae")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RequestReset(ctx, "reset@x.test"); err != nil {
-		t.Fatal(err)
-	}
+	svc.RequestReset("reset@x.test")
 	m := n.last(t)
 	if m.TemplateKey != "client_reset" || m.TicketID != nil {
 		t.Fatalf("mail %+v", m)
@@ -409,9 +420,7 @@ func TestAudienceSeparation(t *testing.T) {
 	if _, err := svc.LoadClient(ctx, 987654321); !errors.Is(err, apperr.ErrUnauthorized) {
 		t.Fatalf("unknown user: %v", err)
 	}
-	if err := svc.Register(ctx, RegisterInput{Email: "aud@x.test", Name: "Aud"}); err != nil {
-		t.Fatal(err)
-	}
+	svc.Register(RegisterInput{Email: "aud@x.test", Name: "Aud"})
 	s, err := svc.Exchange(ctx, rawFromLink(t, n.last(t).Vars.Link))
 	if err != nil {
 		t.Fatal(err)

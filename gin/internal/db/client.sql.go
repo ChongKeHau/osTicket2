@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+const claimTicketUser = `-- name: ClaimTicketUser :exec
+UPDATE ticket SET user_id = $2 WHERE id = $1 AND user_id IS NULL
+`
+
+type ClaimTicketUserParams struct {
+	ID     int64
+	UserID *int64
+}
+
+func (q *Queries) ClaimTicketUser(ctx context.Context, arg ClaimTicketUserParams) error {
+	_, err := q.db.Exec(ctx, claimTicketUser, arg.ID, arg.UserID)
+	return err
+}
+
 const consumeClientRefreshToken = `-- name: ConsumeClientRefreshToken :one
 UPDATE client_refresh_token SET revoked_at = now(), updated_at = now()
 WHERE token_hash = $1 AND revoked_at IS NULL

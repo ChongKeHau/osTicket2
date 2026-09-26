@@ -12,11 +12,14 @@ import (
 // IdentityService is what the portal auth handler needs; *Service implements it.
 type IdentityService interface {
 	UserLoader
-	Register(ctx context.Context, in RegisterInput) error
+	// Register, RequestLink, RequestReset and RequestAccess only schedule
+	// their work and report nothing, so the response never depends on
+	// whether the address or ticket exists.
+	Register(in RegisterInput)
 	Login(ctx context.Context, email, password string) (*Session, error)
-	RequestLink(ctx context.Context, email string) error
-	RequestReset(ctx context.Context, email string) error
-	RequestAccess(ctx context.Context, email, number string) error
+	RequestLink(email string)
+	RequestReset(email string)
+	RequestAccess(email, number string)
 	Exchange(ctx context.Context, raw string) (*Session, error)
 	Refresh(ctx context.Context, raw string) (*Session, error)
 	Logout(ctx context.Context, userID int64, raw string) error
@@ -104,18 +107,16 @@ func (h *Handler) login(c *gin.Context) {
 	c.JSON(http.StatusOK, sess)
 }
 
-// accepted answers 202 whether or not the address or ticket exists; the
-// service reports only real failures as errors.
-func (h *Handler) accepted(c *gin.Context, email string, call func() error) {
+// accepted applies the limiter, hands the work to the service (which runs it
+// after the response) and answers status with an empty object, identical
+// whether or not the address or ticket exists.
+func (h *Handler) accepted(c *gin.Context, status int, email string, schedule func()) {
 	if err := h.limiter.Check(email, c.ClientIP()); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	if err := call(); err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, gin.H{})
+	schedule()
+	c.JSON(status, gin.H{})
 }
 
 func (h *Handler) requestLink(c *gin.Context) {
@@ -123,7 +124,7 @@ func (h *Handler) requestLink(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	h.accepted(c, in.Email, func() error { return h.svc.RequestLink(c.Request.Context(), in.Email) })
+	h.accepted(c, http.StatusAccepted, in.Email, func() { h.svc.RequestLink(in.Email) })
 }
 
 func (h *Handler) requestReset(c *gin.Context) {
@@ -131,7 +132,7 @@ func (h *Handler) requestReset(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	h.accepted(c, in.Email, func() error { return h.svc.RequestReset(c.Request.Context(), in.Email) })
+	h.accepted(c, http.StatusAccepted, in.Email, func() { h.svc.RequestReset(in.Email) })
 }
 
 func (h *Handler) requestAccess(c *gin.Context) {
@@ -139,7 +140,7 @@ func (h *Handler) requestAccess(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	h.accepted(c, in.Email, func() error { return h.svc.RequestAccess(c.Request.Context(), in.Email, in.Number) })
+	h.accepted(c, http.StatusAccepted, in.Email, func() { h.svc.RequestAccess(in.Email, in.Number) })
 }
 
 func (h *Handler) exchange(c *gin.Context) {
@@ -160,11 +161,7 @@ func (h *Handler) register(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	if err := h.svc.Register(c.Request.Context(), in); err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{})
+	h.accepted(c, http.StatusCreated, in.Email, func() { h.svc.Register(in) })
 }
 
 func (h *Handler) refresh(c *gin.Context) {
