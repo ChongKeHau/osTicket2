@@ -19,6 +19,7 @@ await shot('01-queue')
 
 await page.getByRole('link', { name: 'Dashboard' }).click()
 await page.getByRole('heading', { name: 'Ticket Activity' }).waitFor()
+await page.getByRole('img', { name: /Line chart/ }).waitFor()
 await shot('02-dashboard')
 
 await page.getByRole('link', { name: 'Tickets' }).click()
