@@ -67,19 +67,22 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
         else { setStatus('anonymous'); setNotice(EXPIRED) }
         return
       }
-      const scope = portal.tokens.session?.ticket_id ?? null
       try {
-        const profile = await getMe()
+        // Guest sessions may read /me too; its ticket_id is the scope the API enforces.
+        const { ticket_id: scope, ...profile } = await getMe()
         if (stale()) return
         setUserState(profile)
-        setTicketId(scope)
+        setTicketId(scope ?? null)
         setStatus('authenticated')
       } catch (e) {
         if (stale()) return
-        // 401: the session is gone. 403: a scoped session (e.g. reset) that may not read /me —
-        // either way a retry cannot succeed, so end it cleanly.
+        // 401: the session is gone. 403: a session that may not read /me — either way a retry
+        // cannot succeed, so end it cleanly; on 403 the (just rotated) refresh token is still
+        // live on the server, so revoke it rather than only forgetting it.
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-          portal.tokens.clear()
+          if (e.status === 403) await apiLogout().catch(() => portal.tokens.clear())
+          else portal.tokens.clear()
+          if (stale()) return
           setStatus('anonymous')
           if (e.status === 401) setNotice(EXPIRED)
         }

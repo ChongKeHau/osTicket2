@@ -19,6 +19,7 @@ function Probe() {
       <p>user:{a.user?.email ?? '-'}</p>
       <p>ticket:{a.ticketId ?? '-'}</p>
       <p>guest:{String(a.isGuest)}</p>
+      <p>password:{a.user ? String(a.user.has_password) : '-'}</p>
       <p>notice:{a.notice ?? '-'}</p>
       <button type="button" onClick={() => a.adopt(portalFixtures.guestSession)}>adopt</button>
       <button type="button" onClick={() => void a.login('pat@example.test', 'secret123')}>login</button>
@@ -48,12 +49,21 @@ it('restores an account session from the portal key and never touches the staff 
   expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-staff')
 })
 
-it('restores a guest session scoped to its ticket', async () => {
+it('restores a stored guest refresh token to a guest session scoped to its ticket', async () => {
+  const auth: (string | null)[] = []
+  server.events.on('request:start', ({ request }) => {
+    if (new URL(request.url).pathname === '/api/v1/portal/me') auth.push(request.headers.get('Authorization'))
+  })
   localStorage.setItem(PORTAL_REFRESH_KEY, 'prefresh-guest-1')
   renderProbe()
   expect(await screen.findByText('status:authenticated')).toBeInTheDocument()
+  server.events.removeAllListeners()
   expect(screen.getByText('ticket:7')).toBeInTheDocument()
   expect(screen.getByText('guest:true')).toBeInTheDocument()
+  expect(screen.getByText('password:false')).toBeInTheDocument()
+  // /me is read with the guest's rotated access token and the session stays stored.
+  expect(auth).toEqual(['Bearer paccess-guest-2'])
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBe('prefresh-guest-2')
 })
 
 it('is anonymous without a stored token and shows the expiry notice when the token is rejected', async () => {
@@ -67,11 +77,19 @@ it('is anonymous without a stored token and shows the expiry notice when the tok
   expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()
 })
 
-it('ends a restored session cleanly when /me is forbidden to it', async () => {
-  server.use(http.get('/api/v1/portal/me', () => HttpResponse.json({ error: { code: 'forbidden', message: 'no' } }, { status: 403 })))
+it('ends a restored session cleanly when /me is forbidden to it, revoking its refresh token', async () => {
+  const revoked: string[] = []
+  server.use(
+    http.get('/api/v1/portal/me', () => HttpResponse.json({ error: { code: 'forbidden', message: 'no' } }, { status: 403 })),
+    http.post('/api/v1/portal/auth/logout', async ({ request }) => {
+      revoked.push(((await request.json()) as { refresh_token: string }).refresh_token)
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
   localStorage.setItem(PORTAL_REFRESH_KEY, 'prefresh-1')
   renderProbe()
   expect(await screen.findByText('status:anonymous')).toBeInTheDocument()
+  expect(revoked).toEqual(['prefresh-2'])
   expect(screen.getByText('notice:-')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()

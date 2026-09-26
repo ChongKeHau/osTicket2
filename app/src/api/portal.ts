@@ -1,7 +1,7 @@
 import { portal } from './portalClient'
 import { ApiError } from './sessionStore'
 import type {
-  FileInfo, ListResponse, OpenTicketInput, PortalProfile, PortalReference, PortalSession, PortalTicket, PortalTicketRow,
+  FileInfo, ListResponse, OpenTicketInput, PortalMe, PortalProfile, PortalReference, PortalSession, PortalTicket, PortalTicketRow,
 } from './types'
 
 export function getReference(): Promise<PortalReference> {
@@ -78,8 +78,8 @@ export function reopenTicket(id: number): Promise<PortalTicket> {
   return portal.request<PortalTicket>('POST', `/tickets/${id}/reopen`)
 }
 
-export function getMe(): Promise<PortalProfile> {
-  return portal.request<PortalProfile>('GET', '/me')
+export function getMe(): Promise<PortalMe> {
+  return portal.request<PortalMe>('GET', '/me')
 }
 
 export function updateMe(input: { name: string }): Promise<PortalProfile> {

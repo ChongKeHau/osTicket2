@@ -73,7 +73,10 @@ export const portalHandlers = [
     return unauthorized()
   }),
   http.post(`${P}/auth/logout`, noContent),
-  http.get(`${P}/me`, () => HttpResponse.json(profile)),
+  // Like the API: any session may read /me; a guest's answer carries the ticket it is scoped to.
+  http.get(`${P}/me`, ({ request }) => (request.headers.get('Authorization')?.startsWith('Bearer paccess-guest')
+    ? HttpResponse.json({ ...guestSession.user, ticket_id: guestSession.ticket_id })
+    : HttpResponse.json({ ...profile, ticket_id: null }))),
   http.patch(`${P}/me`, async ({ request }) => HttpResponse.json({ ...profile, ...(await request.json() as object) })),
   http.post(`${P}/me/password`, noContent),
   http.get(`${P}/reference`, () => HttpResponse.json(reference)),

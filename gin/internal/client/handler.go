@@ -65,7 +65,8 @@ func NewHandler(svc IdentityService, limiter *Limiter, portal Portal, uploadLimi
 //   - public: POST auth/login, auth/link, auth/reset, access, auth/exchange,
 //     auth/register, auth/refresh
 //   - RequireUser: POST auth/logout; RequireUser + RequireAccount: PATCH me
-//   - RequireUser(AllowPasswordReset) + RequireAccount: GET me, POST me/password
+//   - RequireUser(AllowPasswordReset): GET me (guests too, so a reload restores them)
+//   - RequireUser(AllowPasswordReset) + RequireAccount: POST me/password
 func (h *Handler) MountAuth(public *gin.RouterGroup, tokens *Tokens) {
 	public.POST("/auth/login", h.login)
 	public.POST("/auth/link", h.requestLink)
@@ -79,9 +80,9 @@ func (h *Handler) MountAuth(public *gin.RouterGroup, tokens *Tokens) {
 	user.POST("/auth/logout", h.logout)
 	user.PATCH("/me", RequireAccount(), h.updateMe)
 
-	password := public.Group("", RequireUser(tokens, h.svc, AllowPasswordReset()), RequireAccount())
-	password.GET("/me", h.me)
-	password.POST("/me/password", h.setPassword)
+	withReset := public.Group("", RequireUser(tokens, h.svc, AllowPasswordReset()))
+	withReset.GET("/me", h.me)
+	withReset.POST("/me/password", RequireAccount(), h.setPassword)
 }
 
 type loginRequest struct {
@@ -221,6 +222,13 @@ func (h *Handler) logout(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// meResponse is the profile plus the ticket a guest session is scoped to
+// (null for an account session).
+type meResponse struct {
+	*Profile
+	TicketID *int64 `json:"ticket_id"`
+}
+
 func (h *Handler) me(c *gin.Context) {
 	p, ok := principal(c)
 	if !ok {
@@ -231,7 +239,7 @@ func (h *Handler) me(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, profile)
+	c.JSON(http.StatusOK, meResponse{Profile: profile, TicketID: p.TicketID})
 }
 
 func (h *Handler) updateMe(c *gin.Context) {

@@ -89,6 +89,8 @@ export interface DashboardStats {
 // Customer portal (`/api/v1/portal`).
 export interface PortalProfile { id: number; email: string; name: string; verified: boolean; has_password: boolean }
 /** What an emailed token was issued for; only token exchanges carry it, and the page routes by it. */
+/** `GET /me`: the profile plus the ticket a guest session is scoped to (null for an account). */
+export interface PortalMe extends PortalProfile { ticket_id: number | null }
 export type PortalTokenKind = 'confirm' | 'signin' | 'access' | 'reset'
 export interface PortalSession {
   access_token: string; refresh_token: string; expires_in: number; user: PortalProfile

@@ -268,6 +268,23 @@ func TestHandlerExchangeRegisterRefresh(t *testing.T) {
 	}
 }
 
+// A guest session reads its profile (so a reload can restore it) and learns
+// the ticket it is scoped to; an account session gets a null ticket_id.
+func TestHandlerGuestReadsMe(t *testing.T) {
+	h := newHarness(100)
+	tid := int64(9)
+	guest, _, _ := h.tokens.IssueAccess(5, &tid, false)
+	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	w := h.call(http.MethodGet, "/portal/me", guest, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"id":5`) || !strings.Contains(w.Body.String(), `"ticket_id":9`) {
+		t.Fatalf("guest me: %d %s", w.Code, w.Body.String())
+	}
+	w = h.call(http.MethodGet, "/portal/me", user, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) {
+		t.Fatalf("account me: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandlerSignedInRoutes(t *testing.T) {
 	h := newHarness(100)
 	user, _, _ := h.tokens.IssueAccess(5, nil, false)
@@ -282,7 +299,6 @@ func TestHandlerSignedInRoutes(t *testing.T) {
 		t.Fatalf("me: %d %s", w.Code, w.Body.String())
 	}
 	for _, rc := range []struct{ method, path, body string }{
-		{http.MethodGet, "/portal/me", ""},
 		{http.MethodPatch, "/portal/me", `{"name":"G"}`},
 		{http.MethodPost, "/portal/me/password", `{"password":"newpass123"}`},
 	} {
