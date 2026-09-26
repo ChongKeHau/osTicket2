@@ -38,7 +38,11 @@ describe('as admin', () => {
     expect(within(tabs).getAllByRole('link').map((l) => l.textContent)).toEqual(['Dashboard', 'Departments', 'Help Topics', 'Staff', 'Email'])
     const sub = screen.getByRole('navigation', { name: 'Secondary' })
     expect(within(sub).getByRole('link', { name: 'All Departments' })).toHaveAttribute('href', '/admin/departments')
-    expect(within(sub).getByRole('link', { name: 'Add New Department' })).toHaveAttribute('href', '/admin/departments/new')
+    expect(within(sub).queryByRole('link', { name: /Add New/ })).not.toBeInTheDocument()
+    const add = screen.getAllByRole('link', { name: /Add New/ })
+    expect(add).toHaveLength(1)
+    expect(add[0]).toHaveTextContent('Add New Department')
+    expect(add[0]).toHaveAttribute('href', '/admin/departments/new')
     // Sorted by name by default.
     expect(firstCells()).toEqual(['Billing', 'Sales', 'Support'])
     expect(within(rowOf('Sales')).getAllByRole('cell').map((c) => c.textContent)).toEqual(['Sales', 'Private', 'Ann Agent', 'More ▾'])

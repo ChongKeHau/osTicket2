@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Department, Priority, Topic, TopicInput } from '../../api/types'
 import { LoadingScreen } from '../../components/LoadingScreen'
@@ -24,8 +24,7 @@ const toInput = (t: Topic): TopicInput => ({ name: t.name, dept_id: t.dept_id, p
 export function TopicFormPage() {
   const { id } = useParams()
   const { topics, departments, priorities, isLoading, error } = useReferenceData()
-  const nav = useMemo(() => adminSubNav('topics'), [])
-  useSubNav(nav.items, nav.right)
+  useSubNav(adminSubNav('topics'))
   const n = id === undefined ? null : parseId(id)
   const record = useLastSeen(n === null ? undefined : topics.find((t) => t.id === n), n)
   if (isLoading) return <LoadingScreen />

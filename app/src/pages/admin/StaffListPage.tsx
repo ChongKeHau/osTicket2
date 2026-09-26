@@ -12,8 +12,7 @@ import { RefDataError } from './RefDataError'
 
 export function StaffListPage() {
   const { staff, departments, isLoading, error } = useReferenceData()
-  const nav = useMemo(() => adminSubNav('staff'), [])
-  useSubNav(nav.items, nav.right)
+  useSubNav(adminSubNav('staff'))
   const [sort, setSort] = useState('username')
   const rows = useMemo(() => sortBy(staff, sort), [staff, sort])
   const dept = (id: number) => departments.find((d) => d.id === id)?.name ?? '—'

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Department, Staff, UpdateStaffInput } from '../../api/types'
 import { LoadingScreen } from '../../components/LoadingScreen'
@@ -45,8 +45,7 @@ const toUpdate = (f: Form): Required<UpdateStaffInput> => ({
 export function StaffFormPage() {
   const { id } = useParams()
   const { staff, departments, isLoading, error } = useReferenceData()
-  const nav = useMemo(() => adminSubNav('staff'), [])
-  useSubNav(nav.items, nav.right)
+  useSubNav(adminSubNav('staff'))
   const n = id === undefined ? null : parseId(id)
   const record = useLastSeen(n === null ? undefined : staff.find((s) => s.id === n), n)
   if (isLoading) return <LoadingScreen />
