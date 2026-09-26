@@ -24,3 +24,9 @@ export function toLocalInput(iso: string): string {
 export function fromLocalInput(value: string): string {
   return new Date(value).toISOString()
 }
+
+/** `s` cut to at most `n` characters, ending in an ellipsis when shortened; null/undefined -> ''. */
+export function truncate(s: string | null | undefined, n: number): string {
+  if (!s) return ''
+  return s.length <= n ? s : `${s.slice(0, Math.max(0, n - 1))}…`
+}

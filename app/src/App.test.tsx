@@ -16,9 +16,9 @@ test('/dashboard renders inside the agent shell', async () => {
   expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
 })
 
-test('/admin/email redirects to the templates placeholder in the admin shell', async () => {
+test('/admin/email redirects to the templates list in the admin shell', async () => {
   signInAsAdmin()
   renderWithProviders(<App />, { route: '/admin/email' })
-  expect(await screen.findByRole('heading', { name: 'Email Templates' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /^Email Templates/ })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Agent Panel' })).toBeInTheDocument()
 })

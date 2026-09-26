@@ -1,5 +1,12 @@
 import { http, HttpResponse } from 'msw'
-import { entryFixtures, eventFixtures, referenceFixtures, sessionFixture, staffProfileFixture, ticketFixture } from './fixtures'
+import { emailFixtures, entryFixtures, eventFixtures, referenceFixtures, sessionFixture, staffProfileFixture, ticketFixture } from './fixtures'
+
+/** Serves one page of `items` the way httpx.List does, reading `page` / `page_size` from the query. */
+function listPage<T>(items: T[], url: URL) {
+  const page = Number(url.searchParams.get('page') ?? 1)
+  const pageSize = Number(url.searchParams.get('page_size') ?? 25)
+  return HttpResponse.json({ items: items.slice((page - 1) * pageSize, page * pageSize), page, page_size: pageSize, total: items.length })
+}
 
 const unauthorized = () => HttpResponse.json({ error: { code: 'unauthorized', message: 'authentication required' } }, { status: 401 })
 
@@ -51,4 +58,17 @@ export const handlers = [
   }),
   http.patch('/api/v1/staff/:id', async ({ request, params }) => HttpResponse.json({ ...referenceFixtures.staff[0], ...(await request.json() as object), id: Number(params.id) })),
   http.post('/api/v1/staff/:id/password', () => new HttpResponse(null, { status: 204 })),
+  http.get('/api/v1/email/templates', () => HttpResponse.json({ items: emailFixtures.templates })),
+  http.patch('/api/v1/email/templates/:key', async ({ request, params }) => {
+    const current = emailFixtures.templates.find((t) => t.key === params.key)
+    if (!current) return HttpResponse.json({ error: { code: 'not_found', message: 'template not found' } }, { status: 404 })
+    return HttpResponse.json({ ...current, ...(await request.json() as object), updated_at: '2026-09-26T10:00:00Z' })
+  }),
+  http.get('/api/v1/email/outbox', ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    return listPage(status ? emailFixtures.outbox.filter((o) => o.status === status) : emailFixtures.outbox, url)
+  }),
+  http.post('/api/v1/email/outbox/:id/retry', ({ params }) => HttpResponse.json({ id: Number(params.id), status: 'pending' })),
+  http.get('/api/v1/email/inbound', ({ request }) => listPage(emailFixtures.inbound, new URL(request.url))),
 ]

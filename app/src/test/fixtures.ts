@@ -1,4 +1,6 @@
-import type { Department, Entry, Event, Priority, Session, Staff, StaffProfile, Status, Ticket, Topic } from '../api/types'
+import type {
+  Department, EmailTemplate, Entry, Event, InboundItem, OutboxItem, Priority, Session, Staff, StaffProfile, Status, Ticket, Topic,
+} from '../api/types'
 
 export const staffProfileFixture: StaffProfile = {
   id: 1, username: 'agent', email: 'agent@example.test', first_name: 'Ann', last_name: 'Agent',
@@ -56,4 +58,24 @@ export const adminFixtures = {
     ...referenceFixtures.staff,
     { id: 4, username: 'old', email: 'old@example.test', first_name: 'Olive', last_name: 'Old', is_admin: false, is_active: false, primary_dept_id: 2, department_ids: [2] },
   ] as Staff[],
+}
+
+export const emailFixtures = {
+  templates: [
+    { key: 'ticket_autoresp', subject: '[#{{.Number}}] {{.Subject}}', body_html: '<p>Hi</p>', body_text: 'Hi', updated_at: '2026-09-25T10:00:00Z' },
+    { key: 'ticket_reply', subject: 'Re: [#{{.Number}}] {{.Subject}}', body_html: '{{.MessageHTML}}', body_text: '{{.Message}}', updated_at: '2026-09-24T09:00:00Z' },
+  ] as EmailTemplate[],
+  outbox: [
+    { id: 1, ticket_id: 7, entry_id: null, template_key: 'ticket_autoresp', to_address: 'r@x.test', to_name: 'R', subject: '[#000007] Printer',
+      status: 'failed', attempts: 3, last_error: 'dial tcp 10.0.0.5:587: i/o timeout while connecting to the outbound SMTP relay',
+      next_attempt_at: '2026-09-25T11:00:00Z', sent_at: null, created_at: '2026-09-25T10:00:00Z' },
+    { id: 2, ticket_id: 7, entry_id: 2, template_key: 'ticket_reply', to_address: 'r@x.test', to_name: 'R', subject: 'Re: [#000007] Printer',
+      status: 'sent', attempts: 1, last_error: null, next_attempt_at: '2026-09-25T10:05:00Z', sent_at: '2026-09-25T10:05:10Z', created_at: '2026-09-25T10:05:00Z' },
+  ] as OutboxItem[],
+  inbound: [
+    { id: 1, message_id: '<a@x>', from_address: 'r@x.test', from_name: 'R', subject: 'Re: [#000007] Printer', ticket_id: 7, entry_id: 3,
+      outcome: 'replied', reason: '', received_at: '2026-09-25T12:00:00Z' },
+    { id: 2, message_id: '<b@x>', from_address: 'bot@x.test', from_name: 'Bot', subject: 'Out of office', ticket_id: null, entry_id: null,
+      outcome: 'ignored', reason: 'auto-submitted', received_at: '2026-09-25T12:30:00Z' },
+  ] as InboundItem[],
 }
