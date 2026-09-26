@@ -8,25 +8,25 @@ import { adminFixtures } from '../../test/fixtures'
 import { renderWithProviders } from '../../test/render'
 import { server } from '../../test/setup'
 
-test('a non-admin gets not found at /admin and sees no Admin link', async () => {
+test('a non-admin gets not found at /admin and sees no Admin Panel link', async () => {
   localStorage.setItem(REFRESH_KEY, 'refresh-1') // default /me profile is not an admin
   renderWithProviders(<App />, { route: '/admin' })
   expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument()
-  expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Admin Panel' })).not.toBeInTheDocument()
 })
 
 describe('as admin', () => {
   beforeEach(() => signInAsAdmin())
 
-  test('/admin redirects to the department list with the Admin link and sub-nav', async () => {
+  test('/admin redirects to the department list with the panel switch and admin tabs', async () => {
     renderWithProviders(<App />, { route: '/admin' })
     // Anchor on the async table content (as other page tests do), not the static heading: the
     // heading renders unconditionally on mount, before the reference-data queries resolve.
     await screen.findByRole('link', { name: 'Support' })
     expect(screen.getByRole('heading', { name: 'Departments' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
-    const subnav = screen.getByRole('navigation', { name: /admin sections/i })
-    expect(within(subnav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Departments', 'Topics', 'Staff'])
+    expect(screen.getByRole('link', { name: 'Agent Panel' })).toBeInTheDocument()
+    const tabs = screen.getByRole('navigation', { name: 'Primary' })
+    expect(within(tabs).getAllByRole('link').map((l) => l.textContent)).toEqual(['Dashboard', 'Departments', 'Help Topics', 'Staff', 'Email'])
     const rows = screen.getAllByRole('row').slice(1)
     expect(rows.map((r) => within(r).getAllByRole('cell')[0]!.textContent)).toEqual(['Support', 'Billing', 'Sales'])
     expect(within(rows[2]!).getAllByRole('cell').map((c) => c.textContent)).toEqual(['Sales', 'No', 'Ann Agent', 'Delete'])

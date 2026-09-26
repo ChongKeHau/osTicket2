@@ -16,7 +16,6 @@ const FONT = /font-family\s*:\s*(?!var\()/i
 const RADIUS = /border-radius\s*:\s*[0-9.]+px/i
 
 const LEGACY = new Set([
-  'components/Layout.module.css',
   'components/Composer.module.css',
   'components/ThreadEntry.module.css',
   'components/TicketHeader.module.css',
