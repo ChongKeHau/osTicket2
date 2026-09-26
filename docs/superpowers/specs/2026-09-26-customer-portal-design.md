@@ -97,7 +97,7 @@ Public (no session):
   dept_id?, file_ids?, file_tokens?}` → 201 `{id, number}`. Creates or matches the end user, calls the
   existing `CreateExternal` with source `web` (so the autoresponse is enqueued) and sets
   `ticket.user_id`. When a session is present the email is taken from the session, not
-  the body. Rate-limited per IP and per email at 10 per hour.
+  the body. Rate-limited per IP and per email at 10 per hour for every caller, session or not.
 - `POST /api/v1/portal/files` → same as the staff upload but allowed for portal sessions
   and for anonymous callers with the same per-IP limit; anonymous uploads expire unused
   after 24 h via the existing file GC. The response also carries `token`, a random access
@@ -121,7 +121,8 @@ Signed in (`RequireUser`, guest sessions limited to their ticket):
 - `POST tickets/:id/close` → sets the first `closed`-state status (409 if already closed);
   `POST tickets/:id/reopen` → first `open`-state status (409 if not closed). Both record
   `status_changed` with `{"user_id": me}`.
-- `GET me` → `{id, email, name, verified, has_password}`; `PATCH me` `{name}`;
+- `GET me` → `{id, email, name, verified, has_password, ticket_id}` (guest and password-reset sessions
+  allowed); `PATCH me` `{name}` (accounts only);
   `POST me/password` `{password, current_password?}` (current required when one exists;
   a `reset` session may omit it; setting a password marks the email verified).
 
