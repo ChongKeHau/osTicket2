@@ -19,6 +19,7 @@
   --error-bg: #fdecea; --error-fg: #a12622;
   --radius: 4px;
   --radius-sm: 2px;
+  --radius-pill: 999px;
   --font: "Lato", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-size: 14px;
