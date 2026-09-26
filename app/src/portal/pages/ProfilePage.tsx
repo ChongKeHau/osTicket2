@@ -33,12 +33,14 @@ export function ProfilePage() {
 
 function NameForm({ profile }: { profile: PortalProfile }) {
   const { flash, clear } = useBanner()
+  const { setUser } = usePortalAuth()
   const qc = useQueryClient()
   const [name, setName] = useState(profile.name)
   const mutation = useMutation({
     mutationFn: () => updateMe({ name }),
     onSuccess: (updated) => {
       qc.setQueryData(ME_KEY, updated)
+      setUser(updated)
       flash('notice', 'Profile saved')
     },
   })
@@ -72,6 +74,7 @@ const KNOWN_WITHOUT_CURRENT = ['password']
 
 function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
   const { flash, clear } = useBanner()
+  const { setUser } = usePortalAuth()
   const qc = useQueryClient()
   const location = useLocation()
   const [current, setCurrent] = useState('')
@@ -90,7 +93,11 @@ function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
   const mutation = useMutation({
     mutationFn: () => (hasPassword ? setPassword({ password: next, current_password: current }) : setPassword({ password: next })),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ME_KEY })
+      // Refetch rather than just invalidate: has_password (read by this form and the shell)
+      // needs the fresh value before the next render, not whenever the background refetch lands.
+      const profile = await getMe()
+      qc.setQueryData(ME_KEY, profile)
+      setUser(profile)
       flash('notice', 'Password updated')
       setCurrent(''); setNext(''); setConfirm('')
     },

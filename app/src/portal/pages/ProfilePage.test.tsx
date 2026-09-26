@@ -54,6 +54,19 @@ it('patches the name and flashes Profile saved', async () => {
   expect(body).toEqual({ name: 'Pat New' })
 })
 
+it('updates the shell header greeting after a name save', async () => {
+  server.use(http.patch(`${P}/me`, async ({ request }) => HttpResponse.json({ ...portalFixtures.profile, ...(await request.json() as object) })))
+  mount()
+  expect(await screen.findByText('Pat Customer')).toBeInTheDocument()
+  const name = await screen.findByLabelText(/Name/)
+  await userEvent.clear(name)
+  await userEvent.type(name, 'Pat New')
+  await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+  expect(await screen.findByText('Profile saved')).toBeInTheDocument()
+  expect(screen.getByText('Pat New')).toBeInTheDocument()
+  expect(screen.queryByText('Pat Customer')).not.toBeInTheDocument()
+})
+
 it('shows a field error when the name update fails', async () => {
   server.use(http.patch(`${P}/me`, () => HttpResponse.json(
     { error: { code: 'invalid', message: 'invalid', fields: { name: 'must not be blank' } } }, { status: 422 },

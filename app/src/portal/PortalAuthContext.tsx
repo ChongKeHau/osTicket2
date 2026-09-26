@@ -22,6 +22,10 @@ export interface PortalAuthValue {
   logout(): Promise<void>
   /** Re-run the session restore after an 'error' status. */
   retry(): void
+  /** Updates the signed-in user in place (no network, no status transition) so chrome that
+   *  reads it (e.g. the shell header) reflects a profile change made elsewhere on the same
+   *  session, without waiting for the next full session restore. */
+  setUser(profile: PortalProfile): void
 }
 
 const PortalAuthContext = createContext<PortalAuthValue | null>(null)
@@ -31,7 +35,7 @@ const UNREACHABLE = 'Could not reach the server to restore your session.'
 /** The customer-portal session, stored under its own key; never touches the staff session. */
 export function PortalAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading')
-  const [user, setUser] = useState<PortalProfile | null>(null)
+  const [user, setUserState] = useState<PortalProfile | null>(null)
   const [ticketId, setTicketId] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -46,7 +50,7 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     const stale = () => cancelled || epoch.current !== mine
     portal.tokens.setOnSessionLost(() => {
       if (cancelled) return
-      setUser(null)
+      setUserState(null)
       setTicketId(null)
       setStatus('anonymous')
       setNotice(EXPIRED)
@@ -67,7 +71,7 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
       try {
         const profile = await getMe()
         if (stale()) return
-        setUser(profile)
+        setUserState(profile)
         setTicketId(scope)
         setStatus('authenticated')
       } catch (e) {
@@ -93,7 +97,7 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
 
   const settle = useCallback((s: PortalSession) => {
     epoch.current++
-    setUser(s.user)
+    setUserState(s.user)
     setTicketId(s.ticket_id)
     setNotice(null)
     setError(null)
@@ -113,6 +117,9 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     settle(s)
   }, [queryClient, settle])
 
+  /** Updates `user` in place; does not touch status, tickets or the query cache. */
+  const setUser = useCallback((profile: PortalProfile) => setUserState(profile), [])
+
   const logout = useCallback(async () => {
     epoch.current++
     try {
@@ -120,7 +127,7 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // The local tokens are cleared regardless; a failed server-side revoke only leaves an orphan.
     }
-    setUser(null)
+    setUserState(null)
     setTicketId(null)
     setStatus('anonymous')
     setNotice(null)
@@ -128,9 +135,9 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   const value = useMemo<PortalAuthValue>(() => ({
-    status, user, ticketId, notice, error, login, adopt, logout, retry,
+    status, user, ticketId, notice, error, login, adopt, logout, retry, setUser,
     isGuest: ticketId !== null,
-  }), [status, user, ticketId, notice, error, login, adopt, logout, retry])
+  }), [status, user, ticketId, notice, error, login, adopt, logout, retry, setUser])
 
   return <PortalAuthContext.Provider value={value}>{children}</PortalAuthContext.Provider>
 }
