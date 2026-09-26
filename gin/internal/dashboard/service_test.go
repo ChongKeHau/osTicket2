@@ -86,10 +86,12 @@ var start = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 
 func TestStatsSeriesZeroFillAndWindowEdges(t *testing.T) {
 	f := setup(t)
-	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindCreated, start)                                // first instant: in
-	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindAssigned, start.Add(24*time.Hour+time.Minute)) // day 2
-	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindClosed, start.Add(7*24*time.Hour))             // == end: out
-	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindReopened, start.Add(-time.Second))             // before: out
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindCreated, start)                                                 // first instant: in
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindAssigned, start.Add(24*time.Hour+time.Minute))                  // day 2
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindCreated, start.Add(6*24*time.Hour+23*time.Hour+30*time.Minute)) // last day, 23:30 UTC: in
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindClosed, start.Add(7*24*time.Hour))                              // == end: out
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindClosed, start.Add(7*24*time.Hour+30*time.Minute))               // 00:30 UTC the day after: out
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindReopened, start.Add(-time.Second))                              // before: out
 
 	st, err := f.svc.Stats(f.ctx, auth.Principal{IsAdmin: true}, start, 7)
 	if err != nil {
@@ -104,14 +106,28 @@ func TestStatsSeriesZeroFillAndWindowEdges(t *testing.T) {
 	if st.Series[1].Assigned != 1 {
 		t.Fatalf("day1 %+v", st.Series[1])
 	}
-	for i := 2; i < 7; i++ {
+	for i := 2; i < 6; i++ {
 		p := st.Series[i]
 		if p.Opened+p.Assigned+p.Closed+p.Reopened != 0 {
 			t.Fatalf("day%d not zero: %+v", i, p)
 		}
 	}
+	if st.Series[6].Opened != 1 || st.Series[6].Assigned+st.Series[6].Closed+st.Series[6].Reopened != 0 {
+		t.Fatalf("day6 (last day, 23:30 event) %+v", st.Series[6])
+	}
 	if st.Start != "2026-09-01" || st.Period != 7 {
 		t.Fatalf("meta %+v", st)
+	}
+	// The two out-of-window closed events (exactly at the boundary, and 00:30
+	// into the day after) must not leak into the by-department breakdown
+	// either: dept A shows exactly the three in-window events (2 created, 1
+	// assigned), no closed and no reopened.
+	if len(st.ByDepartment) != 1 {
+		t.Fatalf("by department count %+v", st.ByDepartment)
+	}
+	deptA := st.ByDepartment[0]
+	if deptA.Name != "A" || deptA.Opened != 2 || deptA.Assigned != 1 || deptA.Closed != 0 || deptA.Reopened != 0 {
+		t.Fatalf("dept A breakdown %+v", deptA)
 	}
 }
 
@@ -177,5 +193,24 @@ func TestStatsRejectsBadPeriod(t *testing.T) {
 	f := setup(t)
 	if _, err := f.svc.Stats(f.ctx, auth.Principal{IsAdmin: true}, start, 10); err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestStatsNonAdminWithNoDepartmentsSeesNothing(t *testing.T) {
+	f := setup(t)
+	f.event(t, f.ticketA, &f.staffA, db.TicketEventKindCreated, start)
+	f.event(t, f.ticketB, &f.staffA, db.TicketEventKindAssigned, start)
+
+	st, err := f.svc.Stats(f.ctx, auth.Principal{IsAdmin: false, DeptIDs: nil}, start, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range st.Series {
+		if p.Opened+p.Assigned+p.Closed+p.Reopened != 0 {
+			t.Fatalf("day%d not zero: %+v", i, p)
+		}
+	}
+	if len(st.ByDepartment) != 0 || len(st.ByTopic) != 0 || len(st.ByStaff) != 0 {
+		t.Fatalf("breakdowns not empty: dept=%+v topic=%+v staff=%+v", st.ByDepartment, st.ByTopic, st.ByStaff)
 	}
 }

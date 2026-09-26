@@ -60,7 +60,7 @@ func TestStatsRouteDefaults(t *testing.T) {
 	if f.got[2] != DefaultPeriod {
 		t.Fatalf("period %v", f.got[2])
 	}
-	want := time.Now().UTC().AddDate(0, 0, -DefaultPeriod).Format("2006-01-02")
+	want := time.Now().UTC().AddDate(0, 0, -(DefaultPeriod - 1)).Format("2006-01-02")
 	if f.got[1].(time.Time).Format("2006-01-02") != want {
 		t.Fatalf("start %v want %s", f.got[1], want)
 	}

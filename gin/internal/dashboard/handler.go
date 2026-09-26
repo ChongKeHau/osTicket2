@@ -40,7 +40,7 @@ func (h *Handler) stats(c *gin.Context) {
 		}
 		period = n
 	}
-	start := time.Now().UTC().AddDate(0, 0, -period)
+	start := time.Now().UTC().AddDate(0, 0, -(period - 1))
 	if raw := c.Query("start"); raw != "" {
 		t, err := time.Parse("2006-01-02", raw)
 		if err != nil {
