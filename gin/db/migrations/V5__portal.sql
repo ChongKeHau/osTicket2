@@ -38,6 +38,9 @@ CREATE INDEX client_refresh_token_user_idx ON client_refresh_token (end_user_id)
 ALTER TABLE ticket ADD COLUMN user_id bigint REFERENCES end_user(id) ON DELETE SET NULL;
 CREATE INDEX ticket_user_idx ON ticket (user_id, last_message_at DESC);
 ALTER TABLE thread_entry ADD COLUMN user_id bigint REFERENCES end_user(id) ON DELETE SET NULL;
+-- Portal uploads carry a random token the uploader must present to attach the
+-- file, so a guessed file id alone cannot claim someone else's pending upload.
+ALTER TABLE file ADD COLUMN access_token text;
 
 -- Backfill: one end user per distinct address, named from the most recent ticket.
 -- NOT EXISTS guards this so re-running the migration's statements (as the schema

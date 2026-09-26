@@ -23,6 +23,9 @@ type File struct {
 	Name string `json:"name"`
 	Mime string `json:"mime"`
 	Size int64  `json:"size"`
+	// Token is set only for portal uploads: the uploader must present it
+	// with the file id to attach the file to a ticket.
+	Token string `json:"token,omitempty"`
 }
 
 type Service interface {
@@ -57,14 +60,20 @@ func NewService(b db.Beginner, store Storage, maxBytes int64, allowedMIME []stri
 
 func (s *service) Upload(ctx context.Context, p auth.Principal, name, mime string, r io.Reader) (*File, error) {
 	uploader := p.StaffID
-	return s.upload(ctx, &uploader, name, mime, r)
+	return s.upload(ctx, &uploader, nil, name, mime, r)
 }
 
+// UploadAnonymous also generates the file's access token (32 random bytes, hex).
 func (s *service) UploadAnonymous(ctx context.Context, name, mime string, r io.Reader) (*File, error) {
-	return s.upload(ctx, nil, name, mime, r)
+	var tb [32]byte
+	if _, err := rand.Read(tb[:]); err != nil {
+		return nil, err
+	}
+	token := hex.EncodeToString(tb[:])
+	return s.upload(ctx, nil, &token, name, mime, r)
 }
 
-func (s *service) upload(ctx context.Context, uploader *int64, name, mime string, r io.Reader) (*File, error) {
+func (s *service) upload(ctx context.Context, uploader *int64, token *string, name, mime string, r io.Reader) (*File, error) {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	if name == "" || name == "." || name == "/" || name == ".." {
 		return nil, apperr.Validation("file", "filename is required")
@@ -104,13 +113,17 @@ func (s *service) upload(ctx context.Context, uploader *int64, name, mime string
 		return nil, fmt.Errorf("%w: file exceeds %d bytes", apperr.ErrPayloadTooLarge, s.maxBytes)
 	}
 	row, err := db.New(s.db).CreateFile(ctx, db.CreateFileParams{
-		Key: key, Name: name, Mime: mime, Size: size, Sha256: sum, Backend: "local", UploadedBy: uploader,
+		Key: key, Name: name, Mime: mime, Size: size, Sha256: sum, Backend: "local", UploadedBy: uploader, AccessToken: token,
 	})
 	if err != nil {
 		_ = s.store.Delete(ctx, key)
 		return nil, err
 	}
-	return &File{ID: row.ID, Name: row.Name, Mime: row.Mime, Size: row.Size}, nil
+	out := &File{ID: row.ID, Name: row.Name, Mime: row.Mime, Size: row.Size}
+	if token != nil {
+		out.Token = *token
+	}
+	return out, nil
 }
 
 func (s *service) Download(ctx context.Context, p auth.Principal, id int64) (*File, io.ReadCloser, error) {

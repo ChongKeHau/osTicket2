@@ -443,16 +443,17 @@ type EndUser struct {
 }
 
 type File struct {
-	ID         int64
-	Key        string
-	Name       string
-	Mime       string
-	Size       int64
-	Sha256     string
-	Backend    string
-	UploadedBy *int64
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID          int64
+	Key         string
+	Name        string
+	Mime        string
+	Size        int64
+	Sha256      string
+	Backend     string
+	UploadedBy  *int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	AccessToken *string
 }
 
 type HelpTopic struct {

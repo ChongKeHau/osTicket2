@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -76,12 +75,15 @@ type OpenInput struct {
 	TopicID *int64  `json:"topic_id"`
 	DeptID  *int64  `json:"dept_id"`
 	FileIDs []int64 `json:"file_ids"`
+	// FileTokens pairs with FileIDs: the token each portal upload returned.
+	FileTokens []string `json:"file_tokens"`
 }
 
 type ReplyInput struct {
-	Body    string  `json:"body" binding:"required"`
-	Format  string  `json:"format" binding:"omitempty,oneof=html text"`
-	FileIDs []int64 `json:"file_ids"`
+	Body       string   `json:"body" binding:"required"`
+	Format     string   `json:"format" binding:"omitempty,oneof=html text"`
+	FileIDs    []int64  `json:"file_ids"`
+	FileTokens []string `json:"file_tokens"`
 }
 
 // PortalService is the customer side of tickets: open, list, view, reply,
@@ -154,7 +156,7 @@ func (s *PortalService) OpenTicket(ctx context.Context, p *Principal, ip string,
 		if err := checkChoices(ctx, q, in.DeptID, in.TopicID); err != nil {
 			return err
 		}
-		if err := checkFiles(ctx, q, in.FileIDs); err != nil {
+		if err := checkFiles(ctx, q, in.FileIDs, in.FileTokens); err != nil {
 			return err
 		}
 		u, err := s.ident.UpsertByEmail(ctx, q, email, name)
@@ -225,14 +227,26 @@ func checkChoices(ctx context.Context, q *db.Queries, deptID, topicID *int64) er
 	return nil
 }
 
-// checkFiles admits only portal uploads (no staff uploader). The ticket
-// service attaches as SystemPrincipal, which would otherwise accept any
-// unattached file, including a staff member's pending upload.
-func checkFiles(ctx context.Context, q *db.Queries, ids []int64) error {
-	for _, id := range ids {
-		f, err := q.GetFile(ctx, id)
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && f.UploadedBy != nil) {
-			return apperr.Validation("file_ids", "unknown file "+strconv.FormatInt(id, 10))
+// checkFiles admits only unattached portal uploads whose access token the
+// caller presents, pairwise with the ids. The ticket service attaches as
+// SystemPrincipal, which would otherwise accept any unattached file: a staff
+// member's pending upload (which has no token) or another customer's upload
+// found by guessing its id.
+func checkFiles(ctx context.Context, q *db.Queries, ids []int64, tokens []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	bad := apperr.Validation("file_ids", "unknown or already used file")
+	if len(tokens) != len(ids) {
+		return bad
+	}
+	for i, id := range ids {
+		if tokens[i] == "" {
+			return bad
+		}
+		_, err := q.GetFileForPortalAttach(ctx, db.GetFileForPortalAttachParams{ID: id, AccessToken: tokens[i]})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return bad
 		}
 		if err != nil {
 			return err
@@ -377,7 +391,7 @@ func (s *PortalService) Reply(ctx context.Context, p Principal, id int64, in Rep
 		if err != nil {
 			return err
 		}
-		if err := checkFiles(ctx, q, in.FileIDs); err != nil {
+		if err := checkFiles(ctx, q, in.FileIDs, in.FileTokens); err != nil {
 			return err
 		}
 		svc, err := s.ticketsIn(q)

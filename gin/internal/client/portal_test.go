@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -237,6 +238,62 @@ func TestOpenTicketValidation(t *testing.T) {
 	}
 }
 
+func TestPortalAttachRequiresFileToken(t *testing.T) {
+	f := newPortal(t, 100)
+	file := f.upload(t, "a.txt", "a")
+	other := f.upload(t, "b.txt", "b")
+	staffFile, err := f.files.Upload(f.ctx, f.staff, "s.txt", "text/plain", strings.NewReader("s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func(ids []int64, tokens []string) error {
+		_, err := f.svc.OpenTicket(f.ctx, nil, "ip-"+strconv.Itoa(len(tokens)), OpenInput{
+			Email: "ann@x.test", Subject: "S", Message: "M", DeptID: &f.dept.ID, FileIDs: ids, FileTokens: tokens,
+		})
+		return err
+	}
+	rejected := func(name string, err error) {
+		t.Helper()
+		var ve *apperr.ValidationError
+		if !errors.As(err, &ve) || ve.Fields["file_ids"] != "unknown or already used file" {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	rejected("missing tokens", open([]int64{file.ID}, nil))
+	rejected("wrong token", open([]int64{file.ID}, []string{other.Token}))
+	rejected("empty token", open([]int64{file.ID}, []string{""}))
+	rejected("length mismatch", open([]int64{file.ID, other.ID}, []string{file.Token}))
+	rejected("staff upload", open([]int64{staffFile.ID}, []string{""}))
+	rejected("unknown file", open([]int64{999999}, []string{file.Token}))
+	if n := f.int(t, `SELECT count(*) FROM ticket WHERE requester_email = 'ann@x.test'`); n != 0 {
+		t.Fatalf("rejected opens created %d tickets", n)
+	}
+
+	// A matching pair attaches; the same pair cannot be used again.
+	if err := open([]int64{file.ID}, []string{file.Token}); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.int(t, `SELECT count(*) FROM attachment WHERE file_id = $1`, file.ID); n != 1 {
+		t.Fatalf("attachments %d", n)
+	}
+	rejected("reuse", open([]int64{file.ID}, []string{file.Token}))
+	var id int64
+	if err := f.tx.QueryRow(f.ctx, `SELECT id FROM ticket WHERE requester_email = 'ann@x.test'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	ann := f.principal(t, "ann@x.test")
+	var ve *apperr.ValidationError
+	if err := f.svc.Reply(f.ctx, ann, id, ReplyInput{Body: "x", FileIDs: []int64{file.ID}, FileTokens: []string{file.Token}}); !errors.As(err, &ve) {
+		t.Fatalf("reply reuse: %v", err)
+	}
+	if err := f.svc.Reply(f.ctx, ann, id, ReplyInput{Body: "x", FileIDs: []int64{other.ID}, FileTokens: []string{file.Token}}); !errors.As(err, &ve) {
+		t.Fatalf("reply wrong token: %v", err)
+	}
+	if err := f.svc.Reply(f.ctx, ann, id, ReplyInput{Body: "x", FileIDs: []int64{other.ID}, FileTokens: []string{other.Token}}); err != nil {
+		t.Fatalf("reply with token: %v", err)
+	}
+}
+
 func TestOpenTicketSignedInUsesSessionEmail(t *testing.T) {
 	f := newPortal(t, 1)
 	f.open(t, "sam@x.test", "First")
@@ -363,7 +420,7 @@ func TestGetTicketHidesNotes(t *testing.T) {
 	f := newPortal(t, 100)
 	custFile := f.upload(t, "log.txt", "log")
 	out, err := f.svc.OpenTicket(f.ctx, nil, "ip", OpenInput{
-		Name: "Ann", Email: "ann@x.test", Subject: "S", Message: "first", DeptID: &f.dept.ID, FileIDs: []int64{custFile.ID},
+		Name: "Ann", Email: "ann@x.test", Subject: "S", Message: "first", DeptID: &f.dept.ID, FileIDs: []int64{custFile.ID}, FileTokens: []string{custFile.Token},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +468,7 @@ func TestReplyAppendsMessageWithUser(t *testing.T) {
 	ann := f.principal(t, "ann@x.test")
 	file := f.upload(t, "shot.txt", "s")
 	f.n.sent = nil
-	if err := f.svc.Reply(f.ctx, ann, out.ID, ReplyInput{Body: "thanks", FileIDs: []int64{file.ID}}); err != nil {
+	if err := f.svc.Reply(f.ctx, ann, out.ID, ReplyInput{Body: "thanks", FileIDs: []int64{file.ID}, FileTokens: []string{file.Token}}); err != nil {
 		t.Fatal(err)
 	}
 	var entryID, userID int64
@@ -515,12 +572,12 @@ func TestCloseAndReopen(t *testing.T) {
 func TestDownloadChecksTicket(t *testing.T) {
 	f := newPortal(t, 100)
 	mine := f.upload(t, "mine.txt", "mine")
-	a, err := f.svc.OpenTicket(f.ctx, nil, "ip", OpenInput{Email: "ann@x.test", Subject: "A", Message: "m", DeptID: &f.dept.ID, FileIDs: []int64{mine.ID}})
+	a, err := f.svc.OpenTicket(f.ctx, nil, "ip", OpenInput{Email: "ann@x.test", Subject: "A", Message: "m", DeptID: &f.dept.ID, FileIDs: []int64{mine.ID}, FileTokens: []string{mine.Token}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	theirs := f.upload(t, "theirs.txt", "theirs")
-	b, err := f.svc.OpenTicket(f.ctx, nil, "ip2", OpenInput{Email: "bob@x.test", Subject: "B", Message: "m", DeptID: &f.dept.ID, FileIDs: []int64{theirs.ID}})
+	b, err := f.svc.OpenTicket(f.ctx, nil, "ip2", OpenInput{Email: "bob@x.test", Subject: "B", Message: "m", DeptID: &f.dept.ID, FileIDs: []int64{theirs.ID}, FileTokens: []string{theirs.Token}})
 	if err != nil {
 		t.Fatal(err)
 	}

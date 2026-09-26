@@ -25,19 +25,20 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 }
 
 const createFile = `-- name: CreateFile :one
-INSERT INTO file (key, name, mime, size, sha256, backend, uploaded_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, key, name, mime, size, sha256, backend, uploaded_by, created_at, updated_at
+INSERT INTO file (key, name, mime, size, sha256, backend, uploaded_by, access_token)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, key, name, mime, size, sha256, backend, uploaded_by, created_at, updated_at, access_token
 `
 
 type CreateFileParams struct {
-	Key        string
-	Name       string
-	Mime       string
-	Size       int64
-	Sha256     string
-	Backend    string
-	UploadedBy *int64
+	Key         string
+	Name        string
+	Mime        string
+	Size        int64
+	Sha256      string
+	Backend     string
+	UploadedBy  *int64
+	AccessToken *string
 }
 
 func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, error) {
@@ -49,6 +50,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		arg.Sha256,
 		arg.Backend,
 		arg.UploadedBy,
+		arg.AccessToken,
 	)
 	var i File
 	err := row.Scan(
@@ -62,6 +64,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		&i.UploadedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccessToken,
 	)
 	return i, err
 }
@@ -119,7 +122,7 @@ func (q *Queries) FileTicketDeptID(ctx context.Context, fileID int64) (int64, er
 }
 
 const getFile = `-- name: GetFile :one
-SELECT id, key, name, mime, size, sha256, backend, uploaded_by, created_at, updated_at FROM file WHERE id = $1
+SELECT id, key, name, mime, size, sha256, backend, uploaded_by, created_at, updated_at, access_token FROM file WHERE id = $1
 `
 
 func (q *Queries) GetFile(ctx context.Context, id int64) (File, error) {
@@ -136,8 +139,28 @@ func (q *Queries) GetFile(ctx context.Context, id int64) (File, error) {
 		&i.UploadedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccessToken,
 	)
 	return i, err
+}
+
+const getFileForPortalAttach = `-- name: GetFileForPortalAttach :one
+SELECT f.id FROM file f
+WHERE f.id = $1 AND f.access_token IS NOT NULL AND f.access_token = $2::text
+  AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id)
+`
+
+type GetFileForPortalAttachParams struct {
+	ID          int64
+	AccessToken string
+}
+
+// A portal upload the caller may attach: its token matches and it is not attached yet.
+func (q *Queries) GetFileForPortalAttach(ctx context.Context, arg GetFileForPortalAttachParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getFileForPortalAttach, arg.ID, arg.AccessToken)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const isFileAttached = `-- name: IsFileAttached :one
@@ -152,7 +175,7 @@ func (q *Queries) IsFileAttached(ctx context.Context, fileID int64) (bool, error
 }
 
 const listUnattachedFilesBefore = `-- name: ListUnattachedFilesBefore :many
-SELECT f.id, f.key, f.name, f.mime, f.size, f.sha256, f.backend, f.uploaded_by, f.created_at, f.updated_at FROM file f
+SELECT f.id, f.key, f.name, f.mime, f.size, f.sha256, f.backend, f.uploaded_by, f.created_at, f.updated_at, f.access_token FROM file f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id)
 ORDER BY f.id
@@ -178,6 +201,7 @@ func (q *Queries) ListUnattachedFilesBefore(ctx context.Context, createdAt time.
 			&i.UploadedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccessToken,
 		); err != nil {
 			return nil, err
 		}

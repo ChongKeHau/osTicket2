@@ -41,6 +41,27 @@ func TestUploadAnonymousHasNoUploader(t *testing.T) {
 	if err != nil || row.UploadedBy != nil {
 		t.Fatalf("uploaded_by %v %v", row.UploadedBy, err)
 	}
+	if len(fl.Token) != 64 || row.AccessToken == nil || *row.AccessToken != fl.Token {
+		t.Fatalf("token %q stored %v", fl.Token, row.AccessToken)
+	}
+	other, err := f.svc.UploadAnonymous(f.ctx, "b.txt", "text/plain", strings.NewReader("b"))
+	if err != nil || other.Token == fl.Token {
+		t.Fatalf("second token %+v %v", other, err)
+	}
+	// Staff uploads carry no token.
+	staff, err := f.svc.Upload(f.ctx, f.agent, "s.txt", "text/plain", strings.NewReader("s"))
+	if err != nil || staff.Token != "" {
+		t.Fatalf("staff upload %+v %v", staff, err)
+	}
+	if row, _ := f.q.GetFile(f.ctx, staff.ID); row.AccessToken != nil {
+		t.Fatalf("staff access token %v", *row.AccessToken)
+	}
+	// Downloads never hand the token back.
+	if meta, rc, err := f.svc.Download(f.ctx, f.admin, fl.ID); err != nil || meta.Token != "" {
+		t.Fatalf("download %+v %v", meta, err)
+	} else {
+		rc.Close()
+	}
 	// The same size and type rules apply as for staff uploads.
 	if _, err := f.svc.UploadAnonymous(f.ctx, "a.exe", "application/x-msdownload", strings.NewReader("x")); err == nil {
 		t.Fatal("disallowed type accepted")

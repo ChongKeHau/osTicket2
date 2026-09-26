@@ -1,7 +1,13 @@
 -- name: CreateFile :one
-INSERT INTO file (key, name, mime, size, sha256, backend, uploaded_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO file (key, name, mime, size, sha256, backend, uploaded_by, access_token)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
+
+-- name: GetFileForPortalAttach :one
+-- A portal upload the caller may attach: its token matches and it is not attached yet.
+SELECT f.id FROM file f
+WHERE f.id = @id AND f.access_token IS NOT NULL AND f.access_token = @access_token::text
+  AND NOT EXISTS (SELECT 1 FROM attachment a WHERE a.file_id = f.id);
 
 -- name: GetFile :one
 SELECT * FROM file WHERE id = $1;
