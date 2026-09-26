@@ -37,7 +37,7 @@ await page.getByRole('button', { name: 'Post Note' }).click()
 await page.getByRole('tab', { name: 'Internal Note', selected: true }).waitFor()
 await page.getByLabel('Note', { exact: true }).fill('internal note from the walk')
 await page.getByRole('button', { name: 'Post Note' }).last().click()
-await page.getByRole('status').waitFor()
+await page.getByText('Note posted').waitFor()
 await shot('04-ticket-note')
 
 await page.getByRole('link', { name: 'Admin Panel' }).click()
