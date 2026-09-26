@@ -14,7 +14,7 @@ await page.getByLabel('Username').fill(USER)
 await page.getByLabel('Password').fill(PASS)
 await page.getByRole('button', { name: 'Sign In' }).click()
 await page.waitForURL(/\/tickets/)
-await page.getByRole('row').nth(1).waitFor()
+await page.getByRole('row').nth(1).getByRole('link').first().waitFor()
 await shot('01-queue')
 
 await page.getByRole('link', { name: 'Dashboard' }).click()
