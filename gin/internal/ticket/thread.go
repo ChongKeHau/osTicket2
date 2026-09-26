@@ -60,11 +60,14 @@ type AttachmentRef struct {
 }
 
 type Entry struct {
-	ID          int64           `json:"id"`
-	TicketID    int64           `json:"ticket_id"`
-	Type        string          `json:"type"`
-	StaffID     *int64          `json:"staff_id"`
-	Poster      string          `json:"poster"`
+	ID       int64  `json:"id"`
+	TicketID int64  `json:"ticket_id"`
+	Type     string `json:"type"`
+	StaffID  *int64 `json:"staff_id"`
+	Poster   string `json:"poster"`
+	// UserID is the end user who wrote a customer message (portal or
+	// email), when known.
+	UserID      *int64          `json:"user_id"`
 	Title       *string         `json:"title"`
 	Body        string          `json:"body"`
 	Format      string          `json:"format"`
@@ -514,7 +517,7 @@ func entryWithAttachments(ctx context.Context, q *db.Queries, r db.ThreadEntry) 
 
 func toEntry(r db.ThreadEntry) Entry {
 	return Entry{
-		ID: r.ID, TicketID: r.TicketID, Type: string(r.Type), StaffID: r.StaffID, Poster: r.Poster,
+		ID: r.ID, TicketID: r.TicketID, Type: string(r.Type), StaffID: r.StaffID, Poster: r.Poster, UserID: r.UserID,
 		Title: r.Title, Body: r.Body, Format: string(r.Format), ParentID: r.ParentID,
 		Attachments: []AttachmentRef{}, CreatedAt: r.CreatedAt.UTC(),
 	}

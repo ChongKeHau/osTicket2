@@ -272,8 +272,10 @@ func (h *Handler) setPassword(c *gin.Context) {
 //   - public: GET reference; OptionalUser: POST tickets, POST files
 //   - RequireUser (guests limited to their ticket): GET tickets/:id,
 //     POST tickets/:id/reply, GET tickets/:id/files/:fileId
-//   - RequireUser + RequireAccount: GET tickets, POST tickets/:id/close,
-//     POST tickets/:id/reopen
+//   - RequireUser + RequireAccount: GET tickets
+//
+// Close and reopen admit guest sessions (spec §4: signed in, guests limited
+// to their ticket); the service's ownership check scopes a guest to its ticket.
 func (h *Handler) MountPortal(public *gin.RouterGroup, tokens *Tokens) {
 	public.GET("/reference", h.reference)
 	optional := public.Group("", OptionalUser(tokens, h.svc))
@@ -284,11 +286,11 @@ func (h *Handler) MountPortal(public *gin.RouterGroup, tokens *Tokens) {
 	user.GET("/tickets/:id", h.getTicket)
 	user.POST("/tickets/:id/reply", h.reply)
 	user.GET("/tickets/:id/files/:fileId", h.download)
+	user.POST("/tickets/:id/close", h.closeTicket)
+	user.POST("/tickets/:id/reopen", h.reopenTicket)
 
 	account := user.Group("", RequireAccount())
 	account.GET("/tickets", h.listTickets)
-	account.POST("/tickets/:id/close", h.closeTicket)
-	account.POST("/tickets/:id/reopen", h.reopenTicket)
 }
 
 func (h *Handler) reference(c *gin.Context) {

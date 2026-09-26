@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getReference, openTicket, uploadPortalFile } from '../../api/portal'
 import type { OpenTicketInput, PortalProfile, PortalReference } from '../../api/types'
+import { doneFiles } from '../../components/doneFiles'
 import { FileUpload, type PendingFile } from '../../components/FileUpload'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import { splitErrors } from '../../lib/forms'
@@ -54,10 +55,11 @@ function OpenTicketForm({ reference, user }: { reference: PortalReference; user:
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
+    const files = doneFiles(pending)
     const input: OpenTicketInput = {
       name: form.name, email: form.email, subject: form.subject, message: form.message, format: 'text',
       topic_id: form.topic_id, dept_id: form.dept_id,
-      file_ids: pending.filter((p) => p.status === 'done' && p.fileId !== undefined).map((p) => p.fileId as number),
+      file_ids: files.ids, file_tokens: files.tokens,
     }
     m.mutate(input)
   }

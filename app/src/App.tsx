@@ -5,6 +5,7 @@ import { RequireAuth } from './auth/RequireAuth'
 import { DepartmentFormPage } from './pages/admin/DepartmentFormPage'
 import { DepartmentListPage } from './pages/admin/DepartmentListPage'
 import { InboundPage } from './pages/admin/email/InboundPage'
+import { OutboxItemPage } from './pages/admin/email/OutboxItemPage'
 import { OutboxPage } from './pages/admin/email/OutboxPage'
 import { TemplateFormPage } from './pages/admin/email/TemplateFormPage'
 import { TemplateListPage } from './pages/admin/email/TemplateListPage'
@@ -98,6 +99,7 @@ function StaffApp() {
               <Route path="admin/email/templates" element={<TemplateListPage />} />
               <Route path="admin/email/templates/:key" element={<TemplateFormPage />} />
               <Route path="admin/email/outbox" element={<OutboxPage />} />
+              <Route path="admin/email/outbox/:id" element={<OutboxItemPage />} />
               <Route path="admin/email/inbound" element={<InboundPage />} />
             </Route>
           </Route>

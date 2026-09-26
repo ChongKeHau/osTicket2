@@ -24,7 +24,11 @@ type Config struct {
 	// default) trusts no proxy, so ClientIP() is always the socket address
 	// - see server.New, which passes this to (*gin.Engine).SetTrustedProxies.
 	TrustedProxies []string
-	Mail           MailConfig
+	// AppBaseURL (APP_BASE_URL, no trailing slash) is the public origin of the
+	// web app. Portal links (${AppBaseURL}/portal/t/<token>) are built from it
+	// whether or not mail is enabled; mail requires it.
+	AppBaseURL string
+	Mail       MailConfig
 }
 
 // MailConfig holds outbound SMTP and inbound IMAP settings. Zero when mail is disabled.
@@ -102,6 +106,16 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if v := getenv("TRUSTED_PROXIES"); v != "" {
 		cfg.TrustedProxies = splitList(v)
+	}
+	if v := strings.TrimRight(getenv("APP_BASE_URL"), "/"); v != "" {
+		if u, err := url.Parse(v); err != nil || u.Scheme == "" || u.Host == "" {
+			if !strings.EqualFold(getenv("MAIL_ENABLED"), "true") {
+				// loadMail reports the same problem when mail is on.
+				errs = append(errs, fmt.Errorf("APP_BASE_URL %q must be an absolute URL", v))
+			}
+		} else {
+			cfg.AppBaseURL = v
+		}
 	}
 	errs = append(errs, loadMail(&cfg.Mail, getenv)...)
 	return cfg, errors.Join(errs...)

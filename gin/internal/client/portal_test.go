@@ -228,6 +228,14 @@ func TestOpenTicketValidation(t *testing.T) {
 	if _, err := f.svc.OpenTicket(f.ctx, nil, "ip3", OpenInput{Email: "a@x.test", Subject: "S", Message: "M"}); !errors.As(err, &ve) || ve.Fields["dept_id"] == "" {
 		t.Fatalf("no department: %v", err)
 	}
+	// The form's "no choice" is 0: treated as absent, so a topic with dept 0 still works.
+	zero := int64(0)
+	if _, err := f.svc.OpenTicket(f.ctx, nil, "ip4", OpenInput{Email: "a@x.test", Subject: "S", Message: "M", TopicID: &topicID, DeptID: &zero}); err != nil {
+		t.Fatalf("topic with dept 0: %v", err)
+	}
+	if _, err := f.svc.OpenTicket(f.ctx, nil, "ip5", OpenInput{Email: "a@x.test", Subject: "S", Message: "M", TopicID: &zero, DeptID: &f.dept.ID}); err != nil {
+		t.Fatalf("dept with topic 0: %v", err)
+	}
 	// A staff upload that is not yet attached is not attachable from the portal.
 	staffFile, err := f.files.Upload(f.ctx, f.staff, "s.txt", "text/plain", strings.NewReader("x"))
 	if err != nil {
@@ -378,9 +386,6 @@ func TestGuestCannotListTickets(t *testing.T) {
 	if _, err := f.svc.ListTickets(f.ctx, guest, "", httpx.Page{Page: 1, PageSize: 25}); !errors.Is(err, apperr.ErrGuestSession) {
 		t.Fatalf("guest list: %v", err)
 	}
-	if _, err := f.svc.Close(f.ctx, guest, a.ID); !errors.Is(err, apperr.ErrGuestSession) {
-		t.Fatalf("guest close: %v", err)
-	}
 }
 
 func TestGuestCanViewAndReplyOwnTicketOnly(t *testing.T) {
@@ -405,6 +410,23 @@ func TestGuestCanViewAndReplyOwnTicketOnly(t *testing.T) {
 		if err := f.svc.Reply(f.ctx, guest, id, ReplyInput{Body: "x"}); !errors.Is(err, apperr.ErrNotFound) {
 			t.Fatalf("guest reply %d: %v", id, err)
 		}
+		if _, err := f.svc.Close(f.ctx, guest, id); !errors.Is(err, apperr.ErrNotFound) {
+			t.Fatalf("guest close %d: %v", id, err)
+		}
+		if _, err := f.svc.Reopen(f.ctx, guest, id); !errors.Is(err, apperr.ErrNotFound) {
+			t.Fatalf("guest reopen %d: %v", id, err)
+		}
+	}
+	// A guest may close and reopen its own ticket (spec §4); the events carry its user id.
+	v, err = f.svc.Close(f.ctx, guest, a1.ID)
+	if err != nil || v.State != "closed" {
+		t.Fatalf("guest close own: %+v %v", v, err)
+	}
+	if kind, data := f.lastEvent(t, a1.ID); kind != "closed" || userIDOf(data) != guest.UserID {
+		t.Fatalf("guest close event %s %v", kind, data)
+	}
+	if v, err = f.svc.Reopen(f.ctx, guest, a1.ID); err != nil || v.State != "open" {
+		t.Fatalf("guest reopen own: %+v %v", v, err)
 	}
 	// An account session sees every own ticket but never another user's.
 	ann := f.principal(t, "ann@x.test")

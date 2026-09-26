@@ -37,9 +37,9 @@ export function OutboxPage() {
 
   const columns: Column<OutboxItem>[] = [
     { key: 'id', label: 'ID', width: '4em', align: 'right', render: (r) => String(r.id) },
-    { key: 'ticket', label: 'Ticket', render: (r) => <Link to={`/tickets/${r.ticket_id}`}>#{r.ticket_id}</Link> },
+    { key: 'ticket', label: 'Ticket', render: (r) => (r.ticket_id === null ? '—' : <Link to={`/tickets/${r.ticket_id}`}>#{r.ticket_id}</Link>) },
     { key: 'to', label: 'To', render: (r) => addressee(r.to_name, r.to_address) },
-    { key: 'subject', label: 'Subject', render: (r) => r.subject },
+    { key: 'subject', label: 'Subject', render: (r) => <Link to={`/admin/email/outbox/${r.id}`}>{r.subject}</Link> },
     { key: 'status', label: 'Status', render: (r) => <Badge color={STATUS_COLOR[r.status]}>{r.status}</Badge> },
     { key: 'attempts', label: 'Attempts', align: 'right', render: (r) => String(r.attempts) },
     { key: 'next', label: 'Next attempt', render: (r) => (r.status === 'pending' || r.status === 'failed' ? formatDateTime(r.next_attempt_at) : '') },

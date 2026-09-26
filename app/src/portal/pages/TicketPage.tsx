@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { closeTicket, getMyTicket, reopenTicket, replyTicket, uploadPortalFile } from '../../api/portal'
 import type { PortalTicket } from '../../api/types'
+import { doneFiles } from '../../components/doneFiles'
 import { FileUpload, type PendingFile } from '../../components/FileUpload'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import { formatDateTime, relativeTime } from '../../lib/format'
@@ -111,14 +112,14 @@ function ReplyForm({ ticket }: { ticket: PortalTicket }) {
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
-  const fileIds = files.filter((f) => f.status === 'done' && f.fileId !== undefined).map((f) => f.fileId as number)
+  const done = doneFiles(files)
   const uploading = files.some((f) => f.status === 'uploading')
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setFields({})
     try {
-      await replyTicket(ticket.id, { body, format: 'text', file_ids: fileIds })
+      await replyTicket(ticket.id, { body, format: 'text', file_ids: done.ids, file_tokens: done.tokens })
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.fields).length > 0) setFields(err.fields)
       else onError(err)

@@ -91,7 +91,7 @@ it('posts a reply with attachments, refetches and flashes', async () => {
   const before = calls.n
   await userEvent.click(screen.getByRole('button', { name: 'Post Reply' }))
   expect(await screen.findByText('Reply posted')).toBeInTheDocument()
-  expect(body).toEqual({ body: 'Thanks', format: 'text', file_ids: [42] })
+  expect(body).toEqual({ body: 'Thanks', format: 'text', file_ids: [42], file_tokens: ['tok-42'] })
   await vi.waitFor(() => expect(calls.n).toBeGreaterThan(before))
   expect(screen.getByLabelText('Reply')).toHaveValue('')
   expect(screen.queryByRole('button', { name: 'Remove a.txt' })).not.toBeInTheDocument()

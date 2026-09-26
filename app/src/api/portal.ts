@@ -12,10 +12,11 @@ export function openTicket(input: OpenTicketInput): Promise<{ id: number; number
   return portal.request<{ id: number; number: string }>('POST', '/tickets', { body: input })
 }
 
-export function uploadPortalFile(file: File): Promise<FileInfo> {
+/** Portal uploads carry an access token; send it back in `file_tokens` beside the id in `file_ids`. */
+export function uploadPortalFile(file: File): Promise<FileInfo & { token?: string }> {
   const fd = new FormData()
   fd.append('file', file, file.name)
-  return portal.request<FileInfo>('POST', '/files', { formData: fd })
+  return portal.request<FileInfo & { token?: string }>('POST', '/files', { formData: fd })
 }
 
 export async function login(email: string, password: string): Promise<PortalSession> {
@@ -45,7 +46,7 @@ export function requestReset(email: string): Promise<void> {
 }
 
 export function requestAccess(email: string, number: string): Promise<void> {
-  return portal.request<void>('POST', '/auth/access', { body: { email, number } })
+  return portal.request<void>('POST', '/access', { body: { email, number } })
 }
 
 export async function logout(): Promise<void> {
@@ -65,7 +66,7 @@ export function getMyTicket(id: number): Promise<PortalTicket> {
   return portal.request<PortalTicket>('GET', `/tickets/${id}`)
 }
 
-export function replyTicket(id: number, input: { body: string; format: 'text' | 'html'; file_ids?: number[] }): Promise<void> {
+export function replyTicket(id: number, input: { body: string; format: 'text' | 'html'; file_ids?: number[]; file_tokens?: string[] }): Promise<void> {
   return portal.request<void>('POST', `/tickets/${id}/reply`, { body: input })
 }
 

@@ -57,7 +57,7 @@ export const portalHandlers = [
   }),
   http.post(`${P}/auth/link`, accepted),
   http.post(`${P}/auth/reset`, accepted),
-  http.post(`${P}/auth/access`, accepted),
+  http.post(`${P}/access`, accepted),
   http.post(`${P}/auth/exchange`, async ({ request }) => {
     const { token } = (await request.json()) as { token: string }
     const s = exchanges[token]
@@ -78,7 +78,7 @@ export const portalHandlers = [
   http.post(`${P}/me/password`, noContent),
   http.get(`${P}/reference`, () => HttpResponse.json(reference)),
   http.post(`${P}/tickets`, () => HttpResponse.json({ id: 8, number: '000008' }, { status: 201 })),
-  http.post(`${P}/files`, () => HttpResponse.json({ id: 42, name: 'a.txt', mime: 'text/plain', size: 3 }, { status: 201 })),
+  http.post(`${P}/files`, () => HttpResponse.json({ id: 42, name: 'a.txt', mime: 'text/plain', size: 3, token: 'tok-42' }, { status: 201 })),
   http.get(`${P}/tickets`, ({ request }) => {
     const url = new URL(request.url)
     const state = url.searchParams.get('state')

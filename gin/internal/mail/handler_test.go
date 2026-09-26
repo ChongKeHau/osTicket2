@@ -91,12 +91,43 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 	}
 	// Account mail has no ticket: its ticket_id is JSON null, not 0.
 	mid, _ := NewMessageID(nil, "example.test")
-	if _, err := q.CreateOutbox(ctx, db.CreateOutboxParams{TemplateKey: "client_confirm", ToAddress: "pat@example.test", Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid}); err != nil {
+	ticketless, err := q.CreateOutbox(ctx, db.CreateOutboxParams{TemplateKey: "client_confirm", ToAddress: "pat@example.test", Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
+	if err != nil {
 		t.Fatal(err)
 	}
 	w = do(e, http.MethodGet, "/api/v1/email/outbox?status=pending", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) {
 		t.Fatalf("ticketless outbox = %d %s", w.Code, w.Body)
+	}
+	// Detail: the full row with both bodies; the ticketless row's ticket_id is null.
+	w = do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), "")
+	var detail struct {
+		ID       int64  `json:"id"`
+		TicketID *int64 `json:"ticket_id"`
+		Subject  string `json:"subject"`
+		Status   string `json:"status"`
+		BodyText string `json:"body_text"`
+		BodyHTML string `json:"body_html"`
+	}
+	if w.Code != 200 {
+		t.Fatalf("outbox detail = %d %s", w.Code, w.Body)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := q.GetOutbox(ctx, id)
+	if detail.ID != id || detail.TicketID == nil || *detail.TicketID != tid || detail.Status != "failed" || detail.Subject != want.Subject || detail.BodyText != want.BodyText || detail.BodyHTML != want.BodyHtml || detail.BodyText == "" {
+		t.Fatalf("outbox detail = %+v", detail)
+	}
+	w = do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(ticketless), "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) || !strings.Contains(w.Body.String(), `"body_text":"t"`) || !strings.Contains(w.Body.String(), `"body_html":"\u003cp\u003eh\u003c/p\u003e"`) {
+		t.Fatalf("ticketless detail = %d %s", w.Code, w.Body)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/999999", ""); w.Code != 404 {
+		t.Fatalf("detail missing = %d", w.Code)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/abc", ""); w.Code != 400 {
+		t.Fatalf("detail bad id = %d", w.Code)
 	}
 	if w := do(e, http.MethodGet, "/api/v1/email/outbox?status=bogus", ""); w.Code != 400 {
 		t.Fatalf("bad status = %d", w.Code)
@@ -126,6 +157,9 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 	e = adminRouter(NewHandler(tx, NewRenderer(time.Minute)), auth.Principal{StaffID: 2})
 	if w := do(e, http.MethodGet, "/api/v1/email/templates", ""); w.Code != 403 {
 		t.Fatalf("non-admin = %d", w.Code)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), ""); w.Code != 403 {
+		t.Fatalf("non-admin detail = %d", w.Code)
 	}
 }
 

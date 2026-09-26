@@ -141,6 +141,8 @@ func (s *PortalService) Reference(ctx context.Context) (*Reference, error) {
 // callers are rate-limited per address and per IP.
 func (s *PortalService) OpenTicket(ctx context.Context, p *Principal, ip string, in OpenInput) (*Opened, error) {
 	email, name := strings.TrimSpace(in.Email), strings.TrimSpace(in.Name)
+	// The portal form sends 0 for "no choice" (its select's empty option).
+	in.DeptID, in.TopicID = nonZero(in.DeptID), nonZero(in.TopicID)
 	if p != nil {
 		email = p.Email
 	} else {
@@ -190,6 +192,14 @@ func (s *PortalService) OpenTicket(ctx context.Context, p *Principal, ip string,
 		return nil, err
 	}
 	return out, nil
+}
+
+// nonZero maps a pointer to 0 to nil.
+func nonZero(v *int64) *int64 {
+	if v != nil && *v == 0 {
+		return nil
+	}
+	return v
 }
 
 // checkChoices limits the portal to public departments and active topics.
@@ -428,10 +438,9 @@ func (s *PortalService) Reopen(ctx context.Context, p Principal, id int64) (*Tic
 	return s.setState(ctx, p, id, db.TicketStateOpen)
 }
 
+// A guest session may change its own ticket's state; lock's ownership check
+// returns 404 for any other ticket.
 func (s *PortalService) setState(ctx context.Context, p Principal, id int64, target db.TicketState) (*TicketView, error) {
-	if p.IsGuest() {
-		return nil, apperr.ErrGuestSession
-	}
 	var out *TicketView
 	err := db.WithTx(ctx, s.b, func(q *db.Queries) error {
 		row, err := s.lock(ctx, q, p, id)

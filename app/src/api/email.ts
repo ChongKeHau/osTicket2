@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { EmailTemplate, InboundItem, ListResponse, OutboxItem, TemplateInput } from './types'
+import type { EmailTemplate, InboundItem, ListResponse, OutboxDetail, OutboxItem, TemplateInput } from './types'
 
 export async function listEmailTemplates(): Promise<EmailTemplate[]> {
   return (await request<{ items: EmailTemplate[] }>('GET', '/email/templates')).items
@@ -11,6 +11,10 @@ export function updateEmailTemplate(key: string, input: TemplateInput): Promise<
 
 export function listOutbox(f: { status?: string; page: number; page_size: number }): Promise<ListResponse<OutboxItem>> {
   return request('GET', '/email/outbox', { query: f })
+}
+
+export function getOutboxItem(id: number): Promise<OutboxDetail> {
+  return request('GET', `/email/outbox/${id}`)
 }
 
 export function retryOutbox(id: number): Promise<{ id: number; status: string }> {

@@ -71,6 +71,11 @@ export const handlers = [
     const status = url.searchParams.get('status')
     return listPage(status ? emailFixtures.outbox.filter((o) => o.status === status) : emailFixtures.outbox, url)
   }),
+  http.get('/api/v1/email/outbox/:id', ({ params }) => {
+    const row = emailFixtures.outbox.find((o) => o.id === Number(params.id))
+    if (!row) return HttpResponse.json({ error: { code: 'not_found', message: 'outbox message not found' } }, { status: 404 })
+    return HttpResponse.json({ ...row, body_text: `Hello R,\n\nhttp://localhost:5173/portal/t/abc123`, body_html: '<p>Hello R,</p>' })
+  }),
   http.post('/api/v1/email/outbox/:id/retry', ({ params }) => HttpResponse.json({ id: Number(params.id), status: 'pending' })),
   http.get('/api/v1/email/inbound', ({ request }) => listPage(emailFixtures.inbound, new URL(request.url))),
   ...portalHandlers,

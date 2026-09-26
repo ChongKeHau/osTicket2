@@ -25,6 +25,7 @@ func (h *Handler) Mount(private *gin.RouterGroup) {
 	admin.GET("/email/templates", h.listTemplates)
 	admin.PATCH("/email/templates/:key", h.patchTemplate)
 	admin.GET("/email/outbox", h.listOutbox)
+	admin.GET("/email/outbox/:id", h.getOutbox)
 	admin.POST("/email/outbox/:id/retry", h.retry)
 	admin.GET("/email/inbound", h.listInbound)
 }
@@ -163,14 +164,44 @@ func (h *Handler) listOutbox(c *gin.Context) {
 	}
 	items := make([]outboxJSON, 0, len(rows))
 	for _, r := range rows {
-		j := outboxJSON{ID: r.ID, TicketID: r.TicketID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
-		if r.SentAt != nil {
-			s := r.SentAt.UTC().Format("2006-01-02T15:04:05Z07:00")
-			j.SentAt = &s
-		}
-		items = append(items, j)
+		items = append(items, toOutboxJSON(r))
 	}
 	c.JSON(http.StatusOK, httpx.List[outboxJSON]{Items: items, Page: page.Page, PageSize: page.PageSize, Total: total})
+}
+
+func toOutboxJSON(r db.ListOutboxRow) outboxJSON {
+	j := outboxJSON{ID: r.ID, TicketID: r.TicketID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+	if r.SentAt != nil {
+		s := r.SentAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		j.SentAt = &s
+	}
+	return j
+}
+
+// outboxDetailJSON is one outbox row with its rendered bodies, for admins
+// inspecting a queued message.
+type outboxDetailJSON struct {
+	outboxJSON
+	BodyText string `json:"body_text"`
+	BodyHTML string `json:"body_html"`
+}
+
+func (h *Handler) getOutbox(c *gin.Context) {
+	id, err := httpx.ParseID(c, "id")
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	row, err := db.New(h.db).GetOutbox(c.Request.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpx.Fail(c, apperr.ErrNotFound)
+		return
+	}
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, outboxDetailJSON{outboxJSON: toOutboxJSON(db.ListOutboxRow{ID: row.ID, TicketID: row.TicketID, EntryID: row.EntryID, TemplateKey: row.TemplateKey, ToAddress: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Status: row.Status, Attempts: row.Attempts, LastError: row.LastError, NextAttemptAt: row.NextAttemptAt, SentAt: row.SentAt, CreatedAt: row.CreatedAt}), BodyText: row.BodyText, BodyHTML: row.BodyHtml})
 }
 
 func (h *Handler) retry(c *gin.Context) {

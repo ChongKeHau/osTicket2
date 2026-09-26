@@ -524,14 +524,19 @@ func TestPortalHandlerTicketRoutes(t *testing.T) {
 	if w := h.call(http.MethodGet, "/portal/tickets?page=0", user, ""); w.Code != 400 {
 		t.Fatalf("bad page: %d", w.Code)
 	}
-	for _, rc := range []struct{ method, path string }{
-		{http.MethodGet, "/portal/tickets"},
-		{http.MethodPost, "/portal/tickets/7/close"},
-		{http.MethodPost, "/portal/tickets/7/reopen"},
-	} {
-		w := h.call(rc.method, rc.path, guest, "")
-		if w.Code != 403 || decodeErr(t, w).Error.Code != "guest_session" {
-			t.Fatalf("guest %s %s: %d %s", rc.method, rc.path, w.Code, w.Body.String())
+	if w := h.call(http.MethodGet, "/portal/tickets", guest, ""); w.Code != 403 || decodeErr(t, w).Error.Code != "guest_session" {
+		t.Fatalf("guest list: %d %s", w.Code, w.Body.String())
+	}
+	// Close and reopen admit a guest session (the service scopes it to its ticket).
+	if w := h.call(http.MethodPost, "/portal/tickets/7/close", guest, ""); w.Code != 200 {
+		t.Fatalf("guest close: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.call(http.MethodPost, "/portal/tickets/8/reopen", guest, ""); w.Code != 200 {
+		t.Fatalf("guest reopen: %d %s", w.Code, w.Body.String())
+	}
+	for _, p := range []string{"/portal/tickets/7/close", "/portal/tickets/7/reopen"} {
+		if w := h.call(http.MethodPost, p, "", ""); w.Code != 401 {
+			t.Fatalf("%s without token: %d", p, w.Code)
 		}
 	}
 

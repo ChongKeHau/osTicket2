@@ -76,6 +76,7 @@ run `docker compose down -v` to drop the volume and start clean.
 | TRUSTED_PROXIES | none | comma-separated IPs/CIDRs allowed to set X-Forwarded-For/X-Real-IP; empty trusts none, so `ClientIP()` (used by the login rate limiter) is always the socket address |
 | MAX_UPLOAD_BYTES | 10485760 | per file |
 | ALLOWED_MIME | images, pdf, text, csv, zip, office | comma-separated |
+| APP_BASE_URL | none | public origin of the web app, e.g. `https://desk.example.com`; portal links (`${APP_BASE_URL}/portal/t/<token>`) are built from it whether or not mail is on; required when `MAIL_ENABLED=true` |
 
 ## Email
 
@@ -119,8 +120,46 @@ deployments that want mail out of the web process (running it alongside `serve` 
 Admin API (admin staff only): `GET /api/v1/email/templates`,
 `PATCH /api/v1/email/templates/:key` (Go `text/template` and `html/template` with `.SiteName
 .Number .Subject .RequesterName .RequesterEmail .AgentName .Link .Message .MessageHTML`),
-`GET /api/v1/email/outbox?status=`, `POST /api/v1/email/outbox/:id/retry`,
-`GET /api/v1/email/inbound`.
+`GET /api/v1/email/outbox?status=`, `GET /api/v1/email/outbox/:id` (one row plus its
+`body_text` and `body_html`), `POST /api/v1/email/outbox/:id/retry`,
+`GET /api/v1/email/inbound`. An outbox row's `ticket_id` is `null` for account mail (confirm,
+sign-in and reset links).
+
+## Customer portal
+
+Package `internal/client`, mounted under `/api/v1/portal` (spec:
+`docs/superpowers/specs/2026-09-26-customer-portal-design.md`). End users are a separate
+identity from staff: JWTs carry `aud: "client"` (the staff middleware rejects them and vice
+versa), 15-minute access tokens, rotating refresh tokens stored hashed in
+`client_refresh_token`. Emailed tokens are 32 random bytes, stored as SHA-256, single use;
+`confirm` and `reset` last 24 h, `signin` and `access` 1 h.
+
+| Route | Session | Notes |
+|---|---|---|
+| `POST auth/login` | none | `{email, password}` → session; 401 generic message |
+| `POST auth/link`, `POST auth/reset`, `POST access` | none | `{email}` / `{email, number}` → always 202 `{}`; the lookup and mail run in the background |
+| `POST auth/register` | none | `{email, name}` → always 201 `{}`; mails `client_confirm` unless the address already has a password |
+| `POST auth/exchange` | none | `{token}` → session with `kind` (`confirm`, `signin`, `access`, `reset`); 410 `token_invalid`. `confirm`/`reset` give a password-setting session (no refresh token) |
+| `POST auth/refresh`, `POST auth/logout` | refresh / any | as for staff |
+| `GET me`, `POST me/password` | account (also password-setting) | `{password, current_password?}` |
+| `PATCH me` | account | `{name}` |
+| `GET reference` | none | public departments, active topics, site name |
+| `POST tickets` | optional | `{name, email, subject, message, format, topic_id?, dept_id?, file_ids?, file_tokens?}` → 201 `{id, number}`; `0` means no topic / department |
+| `POST files` | optional | multipart `file` → file JSON plus `token`, which must be sent back in `file_tokens` |
+| `GET tickets/:id`, `POST tickets/:id/reply`, `GET tickets/:id/files/:fileId` | any (guest: its ticket only) | reply 204; replying to a closed ticket reopens it |
+| `POST tickets/:id/close`, `POST tickets/:id/reopen` | any (guest: its ticket only) | 200 ticket; 409 when already in that state |
+| `GET tickets?state=&page=&page_size=` | account | own tickets; guests get 403 `guest_session` |
+
+Rate limits (fixed window, 429 with `retry_after`): sign-in, link, reset, access and register
+share 10 a minute per email and per IP; anonymous ticket opens 10 an hour per email and per
+IP; anonymous uploads 10 an hour per IP.
+
+Migration `V5__portal.sql` adds `end_user`, `client_token`, `client_refresh_token`,
+`ticket.user_id`, `thread_entry.user_id` (staff thread entries expose it as `user_id`),
+`file.access_token`, the four `client_*` email templates, and makes
+`email_outbox.ticket_id` nullable (account mail belongs to no ticket). It backfills one end
+user per distinct requester address (named from that address's latest ticket) and links
+existing tickets to them.
 
 ## Dashboard
 

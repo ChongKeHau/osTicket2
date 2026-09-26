@@ -105,7 +105,7 @@ it('"Email me a sign-in link" with no email focuses the field with an error and 
 
 it('the guest form posts { email, number } to /access and shows the check-email page', async () => {
   let body: unknown
-  server.use(http.post('/api/v1/portal/auth/access', async ({ request }) => {
+  server.use(http.post('/api/v1/portal/access', async ({ request }) => {
     body = await request.json()
     return HttpResponse.json({}, { status: 202 })
   }))
@@ -135,7 +135,7 @@ it('a 429 on "Email me a sign-in link" shows the rate-limit message', async () =
 })
 
 it('a 429 on the guest form shows the rate-limit message', async () => {
-  server.use(http.post('/api/v1/portal/auth/access', tooMany))
+  server.use(http.post('/api/v1/portal/access', tooMany))
   mount()
   await screen.findByRole('heading', { name: 'Check a ticket as a guest' })
   await userEvent.type(within(guest()).getByLabelText(/^email/i), 'jamie@example.test')

@@ -35,6 +35,12 @@ existing modern token skin.
   migration by creating one `end_user` per distinct `lower(requester_email)` (name from the
   most recent ticket) and linking every ticket. Every new ticket sets it.
 - `thread_entry.user_id` (nullable FK), set when a customer posts a message.
+- `file.access_token` (nullable text; amended during execution): a random token set on
+  portal uploads and returned to the uploader, who must present it to attach the file (§4).
+  Staff and inbound-mail files have none.
+- `email_outbox.ticket_id` becomes nullable (amended): account mail (confirm, sign-in and
+  reset links) belongs to no ticket. The outbox JSON carries `ticket_id: null` for those rows
+  and the staff Outbox page shows "—".
 - `ticket_event.data` carries `{"user_id": n}` for customer-initiated `status_changed`
   events; no new event kinds.
 - Seeded `email_template` rows: `client_confirm`, `client_signin_link`,
@@ -66,11 +72,17 @@ principal.
     returns a guest session scoped to `ticket_id`; for `reset` returns a short-lived
     session flagged `reset` whose only permitted call is `POST me/password`. Failures
     return 410 `token_invalid`.
-  - `POST register` `{email, name, password}` → 201 and enqueues `client_confirm`. If the
-    address already has a password, 409 `exists` (no other detail). If it exists without a
-    password (created by an anonymous ticket), the password is set and the confirm link
-    sent. Password policy: at least 8 characters, hashed with the existing helper.
+  - `POST register` `{email, name}` → 201 always (amended during execution: no password
+    and no 409 `exists`). It creates or matches the end user and enqueues `client_confirm`,
+    or does nothing when the address already has a password. The confirm exchange marks the
+    email verified and returns a password-setting session (like `reset`, `kind: "confirm"`),
+    and the person who clicked sets the password with `POST me/password` — so nobody can
+    pre-register someone else's address with their own password. Password policy: at least
+    8 characters, hashed with the existing helper.
   - `POST reset` `{email}` → 202 always; enqueues `client_reset` for existing users.
+  - `link`, `reset`, `access` and `register` validate and rate-limit synchronously, answer
+    202/201 at once, and do the lookup, token and mail work in the background (amended), so
+    response timing does not reveal whether an address or ticket exists.
   - `POST refresh` `{refresh_token}` and `POST logout` mirror the staff endpoints.
 - **Guest access**: `POST /api/v1/portal/access` `{email, number}` → 202 always. If a ticket
   with that number exists and `lower(requester_email)` matches, creates an `access` token
@@ -82,13 +94,17 @@ Public (no session):
 - `GET /api/v1/portal/reference` → `{site_name, departments:[{id,name}] (public only),
   topics:[{id,name}] (active only)}`.
 - `POST /api/v1/portal/tickets` `{name, email, subject, message, format, topic_id?,
-  dept_id?, file_ids?}` → 201 `{id, number}`. Creates or matches the end user, calls the
+  dept_id?, file_ids?, file_tokens?}` → 201 `{id, number}`. Creates or matches the end user, calls the
   existing `CreateExternal` with source `web` (so the autoresponse is enqueued) and sets
   `ticket.user_id`. When a session is present the email is taken from the session, not
   the body. Rate-limited per IP and per email at 10 per hour.
 - `POST /api/v1/portal/files` → same as the staff upload but allowed for portal sessions
   and for anonymous callers with the same per-IP limit; anonymous uploads expire unused
-  after 24 h via the existing file GC.
+  after 24 h via the existing file GC. The response also carries `token`, a random access
+  token stored as `file.access_token` (amended): ticket creation and replies attach a file
+  only when the caller sends its token in `file_tokens`, at the same index as the id in
+  `file_ids`, so a guessed file id alone cannot claim someone else's upload. Staff uploads
+  have no token and cannot be attached from the portal.
 
 Signed in (`RequireUser`, guest sessions limited to their ticket):
 - `GET tickets?state=open|closed&page&page_size` → own tickets (`user_id = me`), sorted by
@@ -98,7 +114,7 @@ Signed in (`RequireUser`, guest sessions limited to their ticket):
   only, each with poster name (customer name or agent display name), body (sanitised HTML
   or text), created, attachments (name, size, download URL). Others' tickets → 404.
 - `GET tickets/:id/files/:fileId` → attachment download, checked against the ticket.
-- `POST tickets/:id/reply` `{body, format, file_ids?}` → appends a `message` entry with
+- `POST tickets/:id/reply` `{body, format, file_ids?, file_tokens?}` → appends a `message` entry with
   `user_id` through the existing `AppendMessage` (unanswered flag, agent alert). If the
   ticket is in a `closed` state it is first moved to the first `open`-state status and a
   `status_changed` event is recorded.

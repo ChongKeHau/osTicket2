@@ -55,10 +55,28 @@ it('anonymous: submits the ticket and shows the emailed-link confirmation', asyn
   await userEvent.click(screen.getByRole('button', { name: /open ticket/i }))
   await waitFor(() => expect(body).toEqual({
     name: 'Jamie Customer', email: 'jamie@example.test', subject: 'Printer on fire', message: 'Please help',
-    format: 'text', topic_id: 0, dept_id: 0, file_ids: [],
+    format: 'text', topic_id: 0, dept_id: 0, file_ids: [], file_tokens: [],
   }))
   expect(await screen.findByRole('heading', { name: 'Ticket #000008 opened' })).toBeInTheDocument()
   expect(screen.getByText(/we emailed you a link to follow this ticket/i)).toBeInTheDocument()
+})
+
+it('anonymous: sends each uploaded file id with its access token', async () => {
+  let body: { file_ids?: number[]; file_tokens?: string[] } = {}
+  server.use(http.post('/api/v1/portal/tickets', async ({ request }) => {
+    body = (await request.json()) as typeof body
+    return HttpResponse.json({ id: 8, number: '000008' }, { status: 201 })
+  }))
+  mount()
+  await userEvent.type(await screen.findByLabelText(/^name$/i), 'Jamie Customer')
+  await userEvent.type(screen.getByLabelText(/^email/i), 'jamie@example.test')
+  await userEvent.type(screen.getByLabelText(/^subject/i), 'Printer on fire')
+  await userEvent.type(screen.getByLabelText(/^message/i), 'Please help')
+  await userEvent.upload(screen.getByLabelText(/attach files/i), new File(['abc'], 'a.txt', { type: 'text/plain' }))
+  await waitFor(() => expect(screen.queryByText('uploading…')).not.toBeInTheDocument())
+  await userEvent.click(screen.getByRole('button', { name: /open ticket/i }))
+  await waitFor(() => expect(body.file_ids).toEqual([42]))
+  expect(body.file_tokens).toEqual(['tok-42'])
 })
 
 it('signed in: email is prefilled and read-only; success view has a View ticket link and no email note', async () => {

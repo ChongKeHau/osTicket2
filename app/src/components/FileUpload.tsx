@@ -3,11 +3,12 @@ import { ApiError } from '../api/client'
 import { uploadFile } from '../api/files'
 import type { FileInfo } from '../api/types'
 
-export interface PendingFile { key: string; name: string; status: 'uploading' | 'done' | 'error'; fileId?: number; error?: string }
+/** `token` is the portal upload's access token; the portal sends it back in `file_tokens`. */
+export interface PendingFile { key: string; name: string; status: 'uploading' | 'done' | 'error'; fileId?: number; token?: string; error?: string }
 
 /** `upload` defaults to the staff upload; the portal passes `uploadPortalFile`. */
 export function FileUpload({ pending, onChange, inputId, upload = uploadFile }: {
-  pending: PendingFile[]; onChange: (next: PendingFile[]) => void; inputId: string; upload?: (file: File) => Promise<FileInfo>
+  pending: PendingFile[]; onChange: (next: PendingFile[]) => void; inputId: string; upload?: (file: File) => Promise<FileInfo & { token?: string }>
 }) {
   const ref = useRef<PendingFile[]>(pending)
   useEffect(() => { ref.current = pending }, [pending])
@@ -35,7 +36,7 @@ export function FileUpload({ pending, onChange, inputId, upload = uploadFile }: 
       onChange(next)
       try {
         const info = await upload(file)
-        update(key, { status: 'done', fileId: info.id })
+        update(key, { status: 'done', fileId: info.id, ...(info.token ? { token: info.token } : {}) })
       } catch (err) {
         const msg = err instanceof ApiError ? (err.fields.file ?? err.message) : 'upload failed'
         update(key, { status: 'error', error: msg })

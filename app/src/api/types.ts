@@ -15,6 +15,8 @@ export interface AttachmentRef { file_id: number; name: string; mime: string; si
 export type EntryType = 'message' | 'response' | 'note'
 export interface Entry {
   id: number; ticket_id: number; type: EntryType; staff_id: number | null; poster: string
+  /** The end user who wrote a customer message, when known. */
+  user_id?: number | null
   title: string | null; body: string; format: 'html' | 'text'; parent_id: number | null
   attachments: AttachmentRef[]; created_at: string
 }
@@ -62,10 +64,12 @@ export interface EmailTemplate { key: string; subject: string; body_html: string
 export interface TemplateInput { subject?: string; body_html?: string; body_text?: string }
 export type OutboxStatus = 'pending' | 'sent' | 'failed'
 export interface OutboxItem {
-  id: number; ticket_id: number; entry_id: number | null; template_key: string; to_address: string; to_name: string
+  id: number; ticket_id: number | null; entry_id: number | null; template_key: string; to_address: string; to_name: string
   subject: string; status: OutboxStatus; attempts: number; last_error: string | null; next_attempt_at: string
   sent_at: string | null; created_at: string
 }
+/** One outbox row with its rendered bodies (GET /email/outbox/:id). */
+export interface OutboxDetail extends OutboxItem { body_text: string; body_html: string }
 export type InboundOutcome = 'created' | 'replied' | 'ignored'
 export interface InboundItem {
   id: number; message_id: string; from_address: string; from_name: string; subject: string
@@ -95,7 +99,7 @@ export interface PortalSession {
 export interface PortalReference { site_name: string; departments: Ref[]; topics: Ref[] }
 export interface OpenTicketInput {
   name: string; email: string; subject: string; message: string; format: 'text' | 'html'
-  topic_id?: number; dept_id?: number; file_ids?: number[]
+  topic_id?: number; dept_id?: number; file_ids?: number[]; file_tokens?: string[]
 }
 export interface PortalTicketRow {
   id: number; number: string; subject: string; status: Ref; state: TicketState; department: string
