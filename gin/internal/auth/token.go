@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"slices"
 	"strconv"
 	"time"
 
@@ -65,10 +64,10 @@ func (t *Tokens) ParseAccess(raw string) (Claims, error) {
 	if err != nil {
 		return Claims{}, fmt.Errorf("%w: %v", apperr.ErrUnauthorized, err)
 	}
-	// Staff tokens carry no audience; the customer portal's tokens carry
-	// "client" and must never authenticate a staff request.
-	if slices.Contains(claims.Audience, "client") {
-		return Claims{}, fmt.Errorf("%w: client token", apperr.ErrUnauthorized)
+	// Staff tokens carry no audience; any token that names one (the customer
+	// portal's carry "client") must never authenticate a staff request.
+	if len(claims.Audience) > 0 {
+		return Claims{}, fmt.Errorf("%w: token has an audience", apperr.ErrUnauthorized)
 	}
 	return claims, nil
 }

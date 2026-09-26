@@ -57,10 +57,6 @@ func TestRequireUserAndAccount(t *testing.T) {
 	if w := call(user, "/p/acct"); w.Code != 204 {
 		t.Fatalf("account: %d", w.Code)
 	}
-	reset, _, _ := ct.IssueAccess(5, nil, true)
-	if w := call(reset, "/p/any"); w.Code != 200 || !strings.Contains(w.Body.String(), `"pwr":true`) {
-		t.Fatalf("password-reset session: %d %s", w.Code, w.Body.String())
-	}
 	tid := int64(9)
 	guest, _, _ := ct.IssueAccess(5, &tid, false)
 	if w := call(guest, "/p/any"); w.Code != 200 || !strings.Contains(w.Body.String(), `"guest":true`) {
@@ -79,5 +75,37 @@ func TestRequireUserAndAccount(t *testing.T) {
 	}
 	if w := call(user, "/bare"); w.Code != 401 {
 		t.Fatalf("account check without principal: %d", w.Code)
+	}
+}
+
+func TestRequireUserPasswordResetSessions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ct := NewTokens(secret, time.Minute)
+	r := gin.New()
+	show := func(c *gin.Context) {
+		p, _ := FromContext(c)
+		c.JSON(200, gin.H{"pwr": p.PasswordReset})
+	}
+	r.GET("/default", RequireUser(ct, fakeLoader{}), show)
+	r.GET("/password", RequireUser(ct, fakeLoader{}, AllowPasswordReset()), show)
+	call := func(tok, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	reset, _, _ := ct.IssueAccess(5, nil, true)
+	if w := call(reset, "/default"); w.Code != 403 || !strings.Contains(w.Body.String(), `"reset_session"`) {
+		t.Fatalf("reset session on default route: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(reset, "/password"); w.Code != 200 || w.Body.String() != `{"pwr":true}` {
+		t.Fatalf("reset session on password route: %d %s", w.Code, w.Body.String())
+	}
+	user, _, _ := ct.IssueAccess(5, nil, false)
+	for _, path := range []string{"/default", "/password"} {
+		if w := call(user, path); w.Code != 200 || w.Body.String() != `{"pwr":false}` {
+			t.Fatalf("normal session on %s: %d %s", path, w.Code, w.Body.String())
+		}
 	}
 }

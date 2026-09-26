@@ -80,8 +80,18 @@ func TestAccessTokenRejections(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	otherAud := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "1", Audience: jwt.ClaimStrings{"billing"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+	})
+	otherAudRaw, err := otherAud.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for name, tok := range map[string]string{
 		"client audience":   clientAudRaw,
+		"any audience":      otherAudRaw,
 		"expired":           old,
 		"wrong key":         other,
 		"alg none":          noneRaw,

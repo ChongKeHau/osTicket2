@@ -20,6 +20,8 @@ var (
 	ErrTokenInvalid = errors.New("token invalid")
 	// ErrGuestSession is a guest (single-ticket) portal session on an account-only route.
 	ErrGuestSession = errors.New("guest session")
+	// ErrResetSession is a password-reset portal session outside the password routes.
+	ErrResetSession = errors.New("reset session")
 )
 
 // RateLimitedError is ErrRateLimited with the wait until the next attempt may succeed.

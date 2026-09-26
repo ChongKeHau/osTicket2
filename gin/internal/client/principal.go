@@ -42,9 +42,25 @@ type UserLoader interface {
 	LoadClient(ctx context.Context, userID int64) (Principal, error)
 }
 
+// Option configures RequireUser.
+type Option func(*requireOpts)
+
+type requireOpts struct{ allowPasswordReset bool }
+
+// AllowPasswordReset admits sessions opened from a password-reset link. Only
+// the routes that show the account and set the new password use it.
+func AllowPasswordReset() Option {
+	return func(o *requireOpts) { o.allowPasswordReset = true }
+}
+
 // RequireUser verifies a client bearer token and loads the principal.
-// Staff tokens are rejected because they lack the client audience.
-func RequireUser(tokens *Tokens, loader UserLoader) gin.HandlerFunc {
+// Staff tokens are rejected because they lack the client audience, and
+// password-reset sessions get 403 reset_session unless AllowPasswordReset is given.
+func RequireUser(tokens *Tokens, loader UserLoader, opts ...Option) gin.HandlerFunc {
+	var o requireOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
 	return func(c *gin.Context) {
 		const prefix = "Bearer "
 		h := c.GetHeader("Authorization")
@@ -60,6 +76,10 @@ func RequireUser(tokens *Tokens, loader UserLoader) gin.HandlerFunc {
 		id, err := strconv.ParseInt(claims.Subject, 10, 64)
 		if err != nil {
 			httpx.Fail(c, apperr.ErrUnauthorized)
+			return
+		}
+		if claims.PasswordReset && !o.allowPasswordReset {
+			httpx.Fail(c, apperr.ErrResetSession)
 			return
 		}
 		p, err := loader.LoadClient(c.Request.Context(), id)

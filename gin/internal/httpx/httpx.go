@@ -57,6 +57,8 @@ func Fail(c *gin.Context, err error) {
 		write(c, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
 	case errors.Is(err, apperr.ErrGuestSession):
 		write(c, http.StatusForbidden, "guest_session", "sign in to an account to do this", nil)
+	case errors.Is(err, apperr.ErrResetSession):
+		write(c, http.StatusForbidden, "reset_session", "finish setting your password first", nil)
 	case errors.Is(err, apperr.ErrForbidden):
 		write(c, http.StatusForbidden, "forbidden", err.Error(), nil)
 	case errors.Is(err, apperr.ErrNotFound):

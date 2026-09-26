@@ -50,6 +50,7 @@ func TestFailMapping(t *testing.T) {
 		{apperr.ErrRateLimited, 429, "rate_limited"},
 		{apperr.ErrTokenInvalid, 410, "token_invalid"},
 		{apperr.ErrGuestSession, 403, "guest_session"},
+		{apperr.ErrResetSession, 403, "reset_session"},
 		{errors.New("boom"), 500, "internal"},
 	}
 	for _, tc := range cases {
