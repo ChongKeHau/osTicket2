@@ -1,4 +1,4 @@
-import { fromLocalInput, toLocalInput, truncate } from './format'
+import { formatDate, fromLocalInput, relativeTime, toLocalInput, truncate } from './format'
 
 test('suite runs under a fixed non-UTC timezone (TZ=America/Los_Angeles in vite.config.ts)', () => {
   expect(new Date('2026-09-26T10:00:00.000Z').getTimezoneOffset()).toBe(420)
@@ -21,4 +21,13 @@ test('truncate keeps short strings and cuts long ones to n characters ending in 
   expect(cut).toBe(`${'y'.repeat(59)}…`)
   expect(truncate(null, 10)).toBe('')
   expect(truncate(undefined, 10)).toBe('')
+})
+
+it('formats relative time buckets', () => {
+  const now = Date.parse('2026-09-26T12:00:00Z')
+  expect(relativeTime('2026-09-26T11:59:40Z', now)).toBe('just now')
+  expect(relativeTime('2026-09-26T11:15:00Z', now)).toBe('45m ago')
+  expect(relativeTime('2026-09-26T03:00:00Z', now)).toBe('9h ago')
+  expect(relativeTime('2026-09-20T12:00:00Z', now)).toBe('6d ago')
+  expect(relativeTime('2026-06-01T12:00:00Z', now)).toBe(formatDate('2026-06-01T12:00:00Z'))
 })

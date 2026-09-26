@@ -3,9 +3,9 @@ import { Button } from './Button'
 import { errorMessage } from './Banner'
 import s from './InlineEdit.module.css'
 
-interface Props { label: string; value: ReactNode; editor: (props: { close: () => void }) => ReactNode; onSave: () => Promise<unknown>; disabled?: boolean }
+interface Props { label: string; value: ReactNode; editor: (props: { close: () => void }) => ReactNode; onSave: () => Promise<unknown>; onOpen?: () => void; disabled?: boolean }
 
-export function InlineEdit({ label, value, editor, onSave, disabled }: Props) {
+export function InlineEdit({ label, value, editor, onSave, onOpen, disabled }: Props) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +33,7 @@ export function InlineEdit({ label, value, editor, onSave, disabled }: Props) {
     const isString = typeof value === 'string'
     return (
       <button ref={trigger} type="button" className={s.trigger} disabled={disabled}
-        aria-label={isString ? `${label}: ${value}` : undefined} onClick={() => setOpen(true)}>
+        aria-label={isString ? `${label}: ${value}` : undefined} onClick={() => { onOpen?.(); setOpen(true) }}>
         {!isString && <span className="sr-only">{label}:</span>}
         {value} <span aria-hidden="true" className={s.pencil}>✎</span>
       </button>

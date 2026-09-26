@@ -12,14 +12,10 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 const COLOR = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i
-const FONT = /font-family\s*:\s*(?!var\()/i
+const FONT = /font-family\s*:(?!\s*var\()/i
 const RADIUS = /border-radius\s*:\s*[0-9.]+px/i
 
-const LEGACY = new Set([
-  'components/Composer.module.css',
-  'components/ThreadEntry.module.css',
-  'components/TicketHeader.module.css',
-  'pages/TicketListPage.module.css',
+const LEGACY = new Set<string>([
 ])
 
 describe('css modules use tokens', () => {
