@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { dashboardFixture, emailFixtures, entryFixtures, eventFixtures, referenceFixtures, sessionFixture, staffProfileFixture, ticketFixture } from './fixtures'
+import { portalHandlers } from './portal'
 
 /** Serves one page of `items` the way httpx.List does, reading `page` / `page_size` from the query. */
 function listPage<T>(items: T[], url: URL) {
@@ -72,4 +73,5 @@ export const handlers = [
   }),
   http.post('/api/v1/email/outbox/:id/retry', ({ params }) => HttpResponse.json({ id: Number(params.id), status: 'pending' })),
   http.get('/api/v1/email/inbound', ({ request }) => listPage(emailFixtures.inbound, new URL(request.url))),
+  ...portalHandlers,
 ]
