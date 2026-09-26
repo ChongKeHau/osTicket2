@@ -1,0 +1,9 @@
+.root { position: relative; display: inline-block; }
+.menu { position: absolute; top: calc(100% + 2px); min-width: 160px; margin: 0; padding: var(--space-1) 0; list-style: none; background: var(--panel-bg); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 20; }
+.left { left: 0; }
+.right { right: 0; }
+.item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.item:hover, .cursor { background: var(--accent-bg); }
+.danger { color: var(--danger); }
+.disabled { color: var(--text-muted); cursor: default; }
+.disabled:hover { background: transparent; }

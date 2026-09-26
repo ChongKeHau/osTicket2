@@ -1,0 +1,7 @@
+.panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-bg); margin-top: var(--space-4); padding: var(--space-2) var(--space-3); }
+.summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+.list { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.row { display: flex; gap: var(--space-2); align-items: baseline; padding: var(--space-1) 0; border-top: 1px solid var(--border); }
+.row > * + *::before { content: "·"; color: var(--text-muted); margin-right: var(--space-2); }
+.kind { font-weight: 700; text-transform: capitalize; }
+.time { color: var(--text-muted); font-size: 13px; }

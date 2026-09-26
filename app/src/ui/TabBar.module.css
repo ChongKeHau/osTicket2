@@ -1,0 +1,5 @@
+.bar { background: var(--page-bg); border-bottom: 1px solid var(--border-strong); }
+.list { list-style: none; margin: 0 auto; padding: 0 var(--space-4); max-width: var(--content-max); display: flex; gap: var(--space-1); }
+.tab { display: block; padding: var(--space-2) var(--space-4); color: var(--text-muted); font-weight: 700; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; margin-bottom: -1px; }
+.tab:hover { color: var(--accent); text-decoration: none; }
+.active { color: var(--accent); background: var(--accent-bg); border-bottom: 2px solid var(--accent); }

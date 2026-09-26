@@ -1,0 +1,4 @@
+.list { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border-strong); }
+.tab { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: var(--space-2) var(--space-4); margin-bottom: -1px; cursor: pointer; color: var(--text-muted); font-weight: 700; border-radius: var(--radius) var(--radius) 0 0; }
+.active { color: var(--accent); background: var(--panel-bg); border-color: var(--border-strong); border-bottom: 1px solid var(--panel-bg); }
+.panel { padding: var(--space-4) 0; }

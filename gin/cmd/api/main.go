@@ -17,6 +17,7 @@ import (
 	"github.com/grandpine/ticket-api/internal/attachment"
 	"github.com/grandpine/ticket-api/internal/auth"
 	"github.com/grandpine/ticket-api/internal/config"
+	"github.com/grandpine/ticket-api/internal/dashboard"
 	"github.com/grandpine/ticket-api/internal/db"
 	"github.com/grandpine/ticket-api/internal/dept"
 	"github.com/grandpine/ticket-api/internal/mail"
@@ -101,6 +102,7 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	deptH := dept.NewHandler(dept.NewService(pool))
 	topicH := topic.NewHandler(topic.NewService(pool))
 	staffH := staff.NewHandler(staff.NewService(pool))
+	dashH := dashboard.NewHandler(dashboard.NewService(pool))
 	notifier, renderer := buildMail(cfg)
 	ticketH := ticket.NewHandler(ticket.NewService(pool, ticket.WithNotifier(notifier)))
 	mailH := mail.NewHandler(pool, renderer)
@@ -119,6 +121,7 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 			ticketH.Mount(private)
 			fileH.Mount(private)
 			mailH.Mount(private)
+			dashH.Mount(private)
 		},
 	})
 	// The mail loops get their own cancel so every return path below (bind

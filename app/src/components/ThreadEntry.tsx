@@ -1,24 +1,25 @@
 import type { Entry } from '../api/types'
-import { formatDateTime } from '../lib/format'
+import { formatDateTime, relativeTime } from '../lib/format'
 import { sanitizeHtml } from '../lib/sanitize'
+import { Badge } from '../ui/Badge'
 import { AttachmentList } from './AttachmentList'
-import styles from './ThreadEntry.module.css'
-
-const labels: Record<Entry['type'], string> = { message: 'Message', response: 'Response', note: 'Note' }
+import s from './ThreadEntry.module.css'
 
 export function ThreadEntry({ entry }: { entry: Entry }) {
   return (
-    <article className={`${styles.entry} ${styles[entry.type] ?? ''}`}>
-      <header className={styles.head}>
-        <span className={styles.badge}>{labels[entry.type]}</span>
-        <strong>{entry.poster || 'Unknown'}</strong>
-        <span className="muted">{formatDateTime(entry.created_at)}</span>
+    <article className={`${s.entry} ${s[entry.type] ?? ''}`}>
+      <header className={s.header}>
+        <span className={s.poster}>{entry.poster || 'Unknown'}</span>
+        {entry.type === 'note' && <Badge>Internal Note</Badge>}
         {entry.title && <em>{entry.title}</em>}
+        <time className={s.time} dateTime={entry.created_at} title={relativeTime(entry.created_at)}>{formatDateTime(entry.created_at)}</time>
       </header>
-      {entry.format === 'html'
-        ? <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.body) }} />
-        : <pre className="pre">{entry.body}</pre>}
-      <AttachmentList attachments={entry.attachments} />
+      <div className={s.body}>
+        {entry.format === 'html'
+          ? <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.body) }} />
+          : <pre className="pre">{entry.body}</pre>}
+      </div>
+      {entry.attachments.length > 0 && <div className={s.attachments}><AttachmentList attachments={entry.attachments} /></div>}
     </article>
   )
 }

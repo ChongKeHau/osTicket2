@@ -1,0 +1,7 @@
+.body { width: 100%; }
+.mono { font-family: var(--font-mono); }
+.vars { list-style: none; margin: 0; padding: 0; }
+.vars li { display: flex; gap: var(--space-3); padding: 1px 0; }
+.vars code { min-width: 12em; font-family: var(--font-mono); }
+.varHelp { color: var(--text-muted); }
+.footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }

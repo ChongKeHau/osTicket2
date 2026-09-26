@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
@@ -11,13 +11,13 @@ beforeEach(() => tokens.clear())
 
 test('anonymous visit to /tickets redirects to /login and back after login', async () => {
   renderWithProviders(<App />, { route: '/tickets' })
-  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument()
   await userEvent.type(screen.getByLabelText(/username/i), 'agent')
   await userEvent.type(screen.getByLabelText(/password/i), 'password1')
   await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
   expect(await screen.findByText(/Ann Agent/)).toBeInTheDocument()
   expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-1')
-  expect(screen.queryByRole('heading', { name: /sign in/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Ticket Desk' })).not.toBeInTheDocument()
 })
 
 test('wrong password shows an error', async () => {
@@ -38,7 +38,7 @@ test('reload with a stored refresh token restores the session', async () => {
 test('stale refresh token on reload lands on login with a notice', async () => {
   localStorage.setItem(REFRESH_KEY, 'stale')
   renderWithProviders(<App />, { route: '/tickets' })
-  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument()
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
   expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
 })
@@ -49,7 +49,7 @@ test('a 502 on refresh at startup keeps the token and offers Retry', async () =>
   renderWithProviders(<App />, { route: '/tickets' })
   expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the server/i)
   expect(localStorage.getItem(REFRESH_KEY)).toBe('refresh-1')
-  expect(screen.queryByRole('heading', { name: /sign in/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Ticket Desk' })).not.toBeInTheDocument()
   server.resetHandlers()
   await userEvent.click(screen.getByRole('button', { name: /retry/i }))
   expect(await screen.findByText(/Ann Agent/)).toBeInTheDocument()
@@ -72,7 +72,7 @@ test('a 500 from /me at startup offers Retry; a 401 from /me shows the expired n
       : HttpResponse.json({ error: { code: 'unauthorized', message: 'x' } }, { status: 401 }))),
   )
   renderWithProviders(<App />, { route: '/tickets' })
-  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument()
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
 })
 
@@ -80,8 +80,8 @@ test('logout clears storage and returns to login', async () => {
   localStorage.setItem(REFRESH_KEY, 'refresh-1')
   renderWithProviders(<App />, { route: '/tickets' })
   await screen.findByText(/Ann Agent/)
-  await userEvent.click(screen.getByRole('button', { name: /sign out/i }))
-  expect(await screen.findByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Log Out' }))
+  expect(await screen.findByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument()
   expect(localStorage.getItem(REFRESH_KEY)).toBeNull()
 })
 
@@ -100,8 +100,7 @@ test('mid-session refresh failure routes to login with the notice', async () => 
   // new request. Clear the cache so navigating to /tickets/new triggers a real GET /topics that
   // hits the 401 override above.
   client.clear()
-  const nav = screen.getByRole('navigation')
-  await userEvent.click(within(nav).getByRole('link', { name: /new ticket/i }))
-  await waitFor(() => expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument())
+  await userEvent.click(screen.getByRole('link', { name: 'New Ticket' }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Ticket Desk' })).toBeInTheDocument())
   expect(screen.getByText(/session expired/i)).toBeInTheDocument()
 })

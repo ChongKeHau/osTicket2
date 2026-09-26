@@ -23,3 +23,7 @@ nbproject/
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# E2E walk (app/e2e)
+app/e2e/shots/
+app/e2e/node_modules/

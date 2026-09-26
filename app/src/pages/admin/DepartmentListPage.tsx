@@ -1,43 +1,54 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { AdminTable } from '../../components/AdminTable'
+import { useMemo, useState } from 'react'
+import type { Department } from '../../api/types'
 import { ConfirmDelete } from '../../components/ConfirmDelete'
-import { ErrorBanner } from '../../components/ErrorBanner'
-import { LoadingScreen } from '../../components/LoadingScreen'
 import { useDepartmentMutations } from '../../hooks/useAdminMutations'
 import { useReferenceData } from '../../hooks/useReferenceData'
 import { staffName } from '../../lib/format'
-import styles from './admin.module.css'
+import { sortBy } from '../../lib/sort'
+import { useSubNav } from '../../ui/AppShell'
+import { Banner, errorMessage } from '../../ui/Banner'
+import { useBanner } from '../../ui/BannerContext'
+import { LinkButton } from '../../ui/Button'
+import { ListTable, type Column } from '../../ui/ListTable'
+import { Menu } from '../../ui/Menu'
+import { StickyBar } from '../../ui/StickyBar'
+import { adminSubNav } from './adminNav'
+import { RefDataError } from './RefDataError'
 
 export function DepartmentListPage() {
-  const qc = useQueryClient()
   const { departments, staff, isLoading, error } = useReferenceData()
   const { remove } = useDepartmentMutations()
-  const manager = (id: number | null) => {
-    const s = staff.find((x) => x.id === id)
-    return s ? staffName(s) : '—'
+  const { flash } = useBanner()
+  useSubNav(adminSubNav('departments'))
+  const [sort, setSort] = useState('name')
+  const rows = useMemo(() => sortBy(departments, sort), [departments, sort])
+  const [confirming, setConfirming] = useState<number | null>(null)
+  const managerName = (id: number | null) => {
+    const m = staff.find((s) => s.id === id)
+    return m ? staffName(m) : '—'
   }
+
+  const columns: Column<Department>[] = [
+    { key: 'name', label: 'Name', sortKey: 'name', render: (d) => d.name },
+    { key: 'public', label: 'Type', sortKey: 'is_public', render: (d) => (d.is_public ? 'Public' : 'Private') },
+    { key: 'manager', label: 'Manager', render: (d) => managerName(d.manager_id) },
+    {
+      key: 'actions', label: '', width: '10em', align: 'right',
+      render: (d) => (confirming === d.id
+        ? <ConfirmDelete label={d.name} startConfirming disabled={remove.isPending} onCancel={() => setConfirming(null)}
+            onConfirm={() => remove.mutateAsync(d.id).then(() => flash('notice', `Department "${d.name}" deleted`)).finally(() => setConfirming(null))} />
+        : <Menu label="More" items={[{ label: 'Delete', danger: true, disabled: remove.isPending, onSelect: () => setConfirming(d.id) }]} />),
+    },
+  ]
+
   return (
-    <div>
-      <div className={styles.head}>
-        <h1 style={{ margin: 0 }}>Departments</h1>
-        <Link to="/admin/departments/new"><button type="button" className="primary">New department</button></Link>
-      </div>
-      {isLoading && <LoadingScreen />}
-      {error && <ErrorBanner error={error} onRetry={() => void qc.refetchQueries({ queryKey: ['ref'] })} />}
-      {remove.error && <ErrorBanner error={remove.error} />}
-      {!isLoading && !error && (
-        <AdminTable
-          columns={[
-            { header: 'Name', cell: (d) => <Link to={`/admin/departments/${d.id}`}>{d.name}</Link> },
-            { header: 'Public', cell: (d) => (d.is_public ? 'Yes' : 'No') },
-            { header: 'Manager', cell: (d) => manager(d.manager_id) },
-          ]}
-          rows={departments}
-          actions={(d) => <ConfirmDelete label={d.name} disabled={remove.isPending} onConfirm={() => remove.mutateAsync(d.id)} />}
-          empty="No departments yet."
-        />
-      )}
-    </div>
+    <>
+      <StickyBar title="Departments" count={departments.length} actions={<LinkButton to="/admin/departments/new" variant="add">Add New Department</LinkButton>} />
+      {error && <RefDataError error={error} />}
+      {remove.error && <Banner level="error">{errorMessage(remove.error)}</Banner>}
+      <ListTable columns={columns} rows={rows} rowKey={(d) => d.id} sort={sort} onSort={setSort}
+        rowHref={(d) => `/admin/departments/${d.id}`} empty={isLoading ? 'Loading…' : 'No departments'}
+        footer={<span>{departments.length} departments</span>} />
+    </>
   )
 }

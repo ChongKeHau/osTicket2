@@ -122,6 +122,25 @@ Admin API (admin staff only): `GET /api/v1/email/templates`,
 `GET /api/v1/email/outbox?status=`, `POST /api/v1/email/outbox/:id/retry`,
 `GET /api/v1/email/inbound`.
 
+## Dashboard
+
+`GET /api/v1/dashboard/stats?start=YYYY-MM-DD&period=30` (any signed-in staff) counts ticket
+events per UTC day in the window `[start, start+period)`.
+
+| Param | Default | Notes |
+|---|---|---|
+| `period` | 30 | days; one of 7, 14, 30, 90 |
+| `start` | today − (period − 1), so the window ends today | UTC date |
+
+A bad `period` or `start` returns 400 with the usual error envelope, naming the field.
+Non-admin staff only see events of tickets in their own departments.
+
+Response: `start`, `period`, `series` (exactly `period` entries of `{date, opened, assigned,
+closed, reopened}`, zero-filled), and three breakdowns `by_department`, `by_topic`,
+`by_staff`, each a list of `{id, name, opened, assigned, closed, reopened}`. Rows whose
+counts are all zero are left out; a ticket without a help topic is counted under `id: null,
+name: "— none —"`, and an event with no staff actor under `id: null, name: "— system —"`.
+
 ## Commands
 
     make test               # full suite with coverage gate (> 75%)

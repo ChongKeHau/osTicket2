@@ -1,28 +1,32 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { getEvents } from '../api/tickets'
-import { formatDateTime } from '../lib/format'
-import { ErrorBanner } from './ErrorBanner'
+import { formatDateTime, relativeTime } from '../lib/format'
+import { Banner, errorMessage } from '../ui/Banner'
+import s from './EventsPanel.module.css'
 
+/** Ticket history, collapsed by default; events are fetched the first time it opens. */
 export function EventsPanel({ ticketId }: { ticketId: number }) {
   const [open, setOpen] = useState(false)
   const q = useQuery({ queryKey: ['events', ticketId], queryFn: () => getEvents(ticketId), enabled: open })
   return (
-    <section aria-label="History" className="panel">
-      <button type="button" onClick={() => setOpen((o) => !o)}>{open ? 'Hide history' : 'Show history'}</button>
-      {open && q.error && <ErrorBanner error={q.error} onRetry={() => void q.refetch()} />}
+    <details className={s.panel} aria-label="History" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className={s.summary}>History</summary>
+      {open && q.error && <Banner level="error">{errorMessage(q.error)}</Banner>}
+      {open && q.isLoading && <p className="muted">Loading…</p>}
       {open && q.data && (
-        <ul>
-          {q.data.map((ev) => (
-            <li key={ev.id}>
-              <span className="muted">{formatDateTime(ev.created_at)}</span>{' '}
-              <strong>{ev.kind.replace('_', ' ')}</strong>
-              {ev.staff && <> by {ev.staff.name || `staff #${ev.staff.id}`}</>}
-              {Object.keys(ev.data).length > 0 && <span className="muted"> {JSON.stringify(ev.data)}</span>}
-            </li>
-          ))}
-        </ul>
+        q.data.length === 0 ? <p className="muted">No history yet.</p> : (
+          <ul className={s.list}>
+            {q.data.map((ev) => (
+              <li key={ev.id} className={s.row}>
+                <span className={s.kind}>{ev.kind.replaceAll('_', ' ')}</span>
+                <span>{ev.staff ? (ev.staff.name || `staff #${ev.staff.id}`) : 'system'}</span>
+                <time className={s.time} dateTime={ev.created_at} title={formatDateTime(ev.created_at)}>{relativeTime(ev.created_at)}</time>
+              </li>
+            ))}
+          </ul>
+        )
       )}
-    </section>
+    </details>
   )
 }

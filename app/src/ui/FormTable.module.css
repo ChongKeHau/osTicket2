@@ -1,0 +1,10 @@
+.table { width: 100%; border: 1px solid var(--border); margin-bottom: var(--space-4); }
+.section { text-align: left; background: var(--page-bg); border-bottom: 1px solid var(--border-strong); padding: var(--space-2) var(--space-3); font-size: 15px; }
+.label { width: 180px; padding: var(--space-2) var(--space-3); vertical-align: top; border-bottom: 1px solid var(--border); }
+.required { font-weight: 700; }
+.star { color: var(--danger); margin-left: 2px; }
+.control { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+.help { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.error { color: var(--danger); font-size: 13px; margin-top: 2px; }
+.hasError input, .hasError select, .hasError textarea { border-color: var(--danger); }
+@media (max-width: 768px) { .label { width: 120px; } }
