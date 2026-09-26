@@ -51,6 +51,36 @@ it('refetches with the chosen start and period', async () => {
   await waitFor(() => expect(seen.at(-1)).toBe('?start=2026-09-01&period=7'))
 })
 
+it('refetches on Refresh even when start and period are unchanged', async () => {
+  const seen: string[] = []
+  server.use(http.get('/api/v1/dashboard/stats', ({ request }) => { seen.push(new URL(request.url).search); return HttpResponse.json(dashboardFixture) }))
+  mount('/dashboard')
+  await screen.findByRole('img', { name: /Opened/ })
+  expect(seen).toHaveLength(1)
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(seen).toHaveLength(2))
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(seen).toHaveLength(3))
+  expect(new Set(seen).size).toBe(1)
+})
+
+it('shows only the error banner when the request fails', async () => {
+  server.use(http.get('/api/v1/dashboard/stats', () => HttpResponse.json({ error: { code: 'bad_request', message: 'start must be a date' } }, { status: 400 })))
+  mount('/dashboard')
+  expect(await screen.findByRole('alert')).toHaveTextContent('start must be a date')
+  expect(screen.queryByText('No activity in this period')).not.toBeInTheDocument()
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+})
+
+it('shows a loading line instead of the table while the first request is pending', async () => {
+  server.use(http.get('/api/v1/dashboard/stats', () => new Promise(() => {})))
+  mount('/dashboard')
+  expect(await screen.findByText('Loading…', { selector: 'p' })).toBeInTheDocument()
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  expect(screen.queryByText('No activity in this period')).not.toBeInTheDocument()
+})
+
 it('shows the empty state when every count is zero', async () => {
   server.use(http.get('/api/v1/dashboard/stats', () => HttpResponse.json({ ...dashboardFixture, series: dashboardFixture.series.map((p) => ({ ...p, opened: 0, assigned: 0, closed: 0, reopened: 0 })), by_department: [], by_topic: [], by_staff: [] })))
   mount('/dashboard')

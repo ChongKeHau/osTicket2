@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { getDashboardStats } from '../api/dashboard'
 import type { DashboardRow } from '../api/types'
 import { sortBy } from '../lib/sort'
@@ -53,10 +53,17 @@ export function DashboardPage() {
     setPeriod(p)
     if (autoStart) setStart(defaultStart(p))
   }
+  const onRefresh = (e: FormEvent) => {
+    e.preventDefault()
+    setAutoStart(false)
+    // An equal `applied` is the same query key, so React Query would not fetch: refetch explicitly.
+    if (start === applied.start && period === applied.period) void stats.refetch()
+    else setApplied({ start, period })
+  }
   return (
     <>
       <StickyBar title="Dashboard" />
-      <form className={s.period} onSubmit={(e) => { e.preventDefault(); setAutoStart(false); setApplied({ start, period }) }}>
+      <form className={s.period} onSubmit={onRefresh}>
         <label htmlFor="start">Start</label>
         <input id="start" type="date" value={start} onChange={(e) => { setAutoStart(false); setStart(e.target.value) }} />
         <label htmlFor="period">Period</label>
@@ -65,13 +72,19 @@ export function DashboardPage() {
       </form>
       {stats.error && <Banner level="error">{errorMessage(stats.error)}</Banner>}
       <h2>Ticket Activity</h2>
+      {stats.isPending && <p className="muted" role="status">Loading…</p>}
       {d && (empty ? <p className="muted">No activity in this period</p> : (
         <LineChart labels={d.series.map((p) => p.date)} series={METRICS.map((k) => ({ label: title(k), points: d.series.map((p) => p[k]), color: COLORS[k] }))} />
       ))}
-      <h2 className={s.statsTitle}>Statistics</h2>
-      <Tabs tabs={[...TABS]} active={tab} onChange={(t) => { setTab(t as TabId); setSort('name') }}>
-        <ListTable columns={columns} rows={rows.length ? [...rows, totals] : []} rowKey={(r) => `${r.id ?? 'none'}-${r.name}`} sort={sort} onSort={setSort} empty="No activity in this period" />
-      </Tabs>
+      {/* Only with data: before it arrives or after an error, an empty table would claim "no activity". */}
+      {d && (
+        <>
+          <h2 className={s.statsTitle}>Statistics</h2>
+          <Tabs tabs={[...TABS]} active={tab} onChange={(t) => { setTab(t as TabId); setSort('name') }}>
+            <ListTable columns={columns} rows={rows.length ? [...rows, totals] : []} rowKey={(r) => `${r.id ?? 'none'}-${r.name}`} sort={sort} onSort={setSort} empty="No activity in this period" />
+          </Tabs>
+        </>
+      )}
     </>
   )
 }
