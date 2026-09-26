@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { listTickets } from '../api/tickets'
 import type { Ticket } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import { useReferenceData } from '../hooks/useReferenceData'
 import { useTicketFilters } from '../hooks/useTicketFilters'
 import { formatDate, relativeTime } from '../lib/format'
@@ -21,9 +22,19 @@ const newTicket = <LinkButton to="/tickets/new" variant="add">New Ticket</LinkBu
 export function TicketListPage() {
   const [params] = useSearchParams()
   const { filter, set } = useTicketFilters()
+  const { isAdmin, departmentIds } = useAuth()
   const { departments, statuses, priorities } = useReferenceData()
+  const visibleDepts = departments.filter((d) => isAdmin || departmentIds.includes(d.id))
   useSubNav(useMemo(() => ticketSubNav(params), [params]), newTicket)
   const [q, setQ] = useState(filter.q ?? '')
+  // Re-sync the search box from the URL when it changes out from under this page (a sub-nav click,
+  // browser back/forward), without an effect: update state during render, React's documented
+  // pattern for "adjust state when a prop changes" (avoids the extra render an effect would cause).
+  const [syncedQ, setSyncedQ] = useState(filter.q ?? '')
+  if ((filter.q ?? '') !== syncedQ) {
+    setSyncedQ(filter.q ?? '')
+    setQ(filter.q ?? '')
+  }
 
   const list = useQuery({ queryKey: ['tickets', filter], queryFn: () => listTickets(filter), placeholderData: keepPreviousData })
 
@@ -53,7 +64,7 @@ export function TicketListPage() {
           <>
             <select aria-label="Department" value={filter.dept_id ?? ''} onChange={(e) => set({ dept_id: e.target.value ? Number(e.target.value) : undefined, page: 1 })}>
               <option value="">All departments</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {visibleDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
             <select aria-label="Status" value={filter.status ?? ''} onChange={(e) => set({ status: e.target.value ? Number(e.target.value) : undefined, page: 1 })}>
               <option value="">Any status</option>

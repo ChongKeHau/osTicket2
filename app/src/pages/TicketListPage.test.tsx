@@ -56,3 +56,23 @@ it('renders the error banner when the list fails', async () => {
   mount('/tickets')
   expect(await screen.findByRole('alert')).toHaveTextContent('Database down')
 })
+
+it('scopes the department filter to the agent\'s own departments', async () => {
+  // The default /api/v1/me handler returns staffProfileFixture, a non-admin in department 1 only,
+  // so department 2 ("Billing") must not appear in the select.
+  mount('/tickets')
+  await screen.findByRole('heading', { name: /All Tickets/ })
+  const select = screen.getByRole('combobox', { name: 'Department' })
+  await within(select).findByRole('option', { name: 'Support' })
+  const options = within(select).getAllByRole('option').map((o) => o.textContent)
+  expect(options).toEqual(['All departments', 'Support'])
+})
+
+it('keeps the search box in sync with the URL', async () => {
+  mount('/tickets?q=printer')
+  await screen.findByRole('heading', { name: /Search Results/ })
+  expect(screen.getByRole('searchbox', { name: 'Search tickets' })).toHaveValue('printer')
+  await userEvent.click(screen.getByRole('link', { name: 'Open' }))
+  await screen.findByRole('heading', { name: /Open Tickets/ })
+  expect(screen.getByRole('searchbox', { name: 'Search tickets' })).toHaveValue('')
+})
