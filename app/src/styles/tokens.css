@@ -1,0 +1,29 @@
+:root {
+  --page-bg: #f4f5f7;
+  --panel-bg: #ffffff;
+  --border: #d9dde3;
+  --border-strong: #aab2bd;
+  --text: #1f2328;
+  --text-muted: #6b7280;
+  --accent: #1a5f9a;
+  --accent-bg: #eaf2fa;
+  --header-action: #e65524;
+  --zebra: #f5f9fd;
+  --row-hover: #fffbe6;
+  --note-bg: #fff8d6;
+  --green: #2e8b57;
+  --danger: #c0392b;
+  --info-bg: #d9edf7; --info-fg: #3a87ad;
+  --notice-bg: #dff0d8; --notice-fg: #2f6f3e;
+  --warning-bg: #fff9d6; --warning-fg: #8a6d1d;
+  --error-bg: #fdecea; --error-fg: #a12622;
+  --radius: 4px;
+  --radius-sm: 2px;
+  --font: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size: 14px;
+  --content-max: 1100px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --on-accent: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}

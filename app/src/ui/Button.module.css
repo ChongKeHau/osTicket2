@@ -1,0 +1,10 @@
+.btn { display: inline-flex; align-items: center; gap: var(--space-1); border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--panel-bg); color: var(--text); padding: 6px 12px; cursor: pointer; line-height: 1.2; text-decoration: none; white-space: nowrap; }
+.btn:hover { background: var(--accent-bg); text-decoration: none; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.sm { padding: 3px 8px; font-size: 13px; }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.primary:hover { filter: brightness(1.08); background: var(--accent); }
+.add { background: var(--green); border-color: var(--green); color: var(--on-accent); }
+.add:hover { filter: brightness(1.08); background: var(--green); }
+.danger { color: var(--danger); border-color: var(--danger); }
+.danger:hover { background: var(--error-bg); }
