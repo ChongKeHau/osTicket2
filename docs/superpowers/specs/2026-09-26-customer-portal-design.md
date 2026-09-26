@@ -151,9 +151,11 @@ own `PortalAuthProvider` (session store `api/portalClient.ts` using storage key
 - `/portal/login`: two columns. Left "Sign in": Email, Password, Sign In, links "Email me a
   sign-in link" (submits the email only) and "Forgot password". Right "Check a ticket as a
   guest": Email, Ticket Number, "Email me an access link", and "Create an account".
-- `/portal/register`: Name, Email, Password, Confirm; then a "Check your email" page.
+- `/portal/register`: Name and Email only; then a "Check your email" page. The password is set
+  after the confirm link is followed.
 - `/portal/t/:token`: single token page that calls `exchange`, stores the session, and
-  redirects by kind: `confirm` → tickets with a "Email confirmed" flash; `signin` →
+  redirects by kind: `confirm` → `/portal/profile#password` with an "Email confirmed — set your
+  password" flash; `signin` →
   tickets; `access` → that ticket; `reset` → `/portal/profile#password`. Failure shows a
   banner "This link has expired or was already used" with buttons to request a new one.
 - `/portal/reset`: Email → "Check your email".
