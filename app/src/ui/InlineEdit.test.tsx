@@ -26,6 +26,14 @@ it('stays open and shows the error when save rejects', async () => {
   expect(screen.getByLabelText('p')).toBeInTheDocument()
 })
 
+it('calls onOpen before showing the editor', async () => {
+  const onOpen = vi.fn()
+  render(<InlineEdit label="Subject" value="Hi" onOpen={onOpen} editor={() => <input aria-label="s" />} onSave={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Subject: Hi' }))
+  expect(onOpen).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('s')).toBeInTheDocument()
+})
+
 it('moves focus into the editor on open', async () => {
   const onSave = vi.fn().mockResolvedValue(undefined)
   render(<InlineEdit label="Status" value="Open" editor={() => <select aria-label="Status editor"><option>Open</option></select>} onSave={onSave} />)
