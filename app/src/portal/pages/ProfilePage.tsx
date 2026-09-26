@@ -74,7 +74,7 @@ const KNOWN_WITHOUT_CURRENT = ['password']
 
 function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
   const { flash, clear } = useBanner()
-  const { setUser } = usePortalAuth()
+  const { adopt } = usePortalAuth()
   const qc = useQueryClient()
   const location = useLocation()
   const [current, setCurrent] = useState('')
@@ -92,12 +92,12 @@ function PasswordForm({ hasPassword }: { hasPassword: boolean }) {
 
   const mutation = useMutation({
     mutationFn: () => (hasPassword ? setPassword({ password: next, current_password: current }) : setPassword({ password: next })),
-    onSuccess: async () => {
-      // Refetch rather than just invalidate: has_password (read by this form and the shell)
-      // needs the fresh value before the next render, not whenever the background refetch lands.
-      const profile = await getMe()
-      qc.setQueryData(ME_KEY, profile)
-      setUser(profile)
+    onSuccess: (session) => {
+      // The API ended every session this user held (a reset session included) and answered a
+      // fresh full one: adopt it, then seed the profile (has_password is read by this form and
+      // the shell) so the next render already has it.
+      adopt(session)
+      qc.setQueryData(ME_KEY, session.user)
       flash('notice', 'Password updated')
       setCurrent(''); setNext(''); setConfirm('')
     },

@@ -142,7 +142,7 @@ versa), 15-minute access tokens, rotating refresh tokens stored hashed in
 | `POST auth/exchange` | none | `{token}` → session with `kind` (`confirm`, `signin`, `access`, `reset`); 410 `token_invalid`. `confirm`/`reset` give a password-setting session (no refresh token) |
 | `POST auth/refresh`, `POST auth/logout` | refresh / any | as for staff |
 | `GET me` | any (also password-setting) | profile plus `ticket_id` (the guest's ticket; `null` for an account) |
-| `POST me/password` | account (also password-setting) | `{password, current_password?}` |
+| `POST me/password` | account (also password-setting) | `{password, current_password?}` → a fresh full session; every earlier refresh token of the user is revoked |
 | `PATCH me` | account | `{name}` |
 | `GET reference` | none | public departments, active topics, site name |
 | `POST tickets` | optional | `{name, email, subject, message, format, topic_id?, dept_id?, file_ids?, file_tokens?}` → 201 `{id, number}`; `0` means no topic / department |

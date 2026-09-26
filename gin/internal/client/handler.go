@@ -27,7 +27,7 @@ type IdentityService interface {
 	Logout(ctx context.Context, userID int64, raw string) error
 	Me(ctx context.Context, userID int64) (*Profile, error)
 	UpdateName(ctx context.Context, userID int64, name string) (*Profile, error)
-	SetPassword(ctx context.Context, p Principal, in PasswordInput) error
+	SetPassword(ctx context.Context, p Principal, in PasswordInput) (*Session, error)
 }
 
 // Portal is what the portal ticket routes need; *PortalService implements it.
@@ -268,11 +268,12 @@ func (h *Handler) setPassword(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	if err := h.svc.SetPassword(c.Request.Context(), p, in); err != nil {
+	sess, err := h.svc.SetPassword(c.Request.Context(), p, in)
+	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, sess)
 }
 
 // MountPortal registers the portal ticket routes on public (the

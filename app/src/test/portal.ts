@@ -78,7 +78,8 @@ export const portalHandlers = [
     ? HttpResponse.json({ ...guestSession.user, ticket_id: guestSession.ticket_id })
     : HttpResponse.json({ ...profile, ticket_id: null }))),
   http.patch(`${P}/me`, async ({ request }) => HttpResponse.json({ ...profile, ...(await request.json() as object) })),
-  http.post(`${P}/me/password`, noContent),
+  // A password change ends every other session and answers a fresh full session.
+  http.post(`${P}/me/password`, () => HttpResponse.json({ ...session, access_token: 'paccess-pw', refresh_token: 'prefresh-pw' })),
   http.get(`${P}/reference`, () => HttpResponse.json(reference)),
   http.post(`${P}/tickets`, () => HttpResponse.json({ id: 8, number: '000008' }, { status: 201 })),
   http.post(`${P}/files`, () => HttpResponse.json({ id: 42, name: 'a.txt', mime: 'text/plain', size: 3, token: 'tok-42' }, { status: 201 })),

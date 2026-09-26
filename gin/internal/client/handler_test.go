@@ -85,12 +85,12 @@ func (f *fakeIdentity) UpdateName(_ context.Context, userID int64, name string) 
 	return &Profile{ID: userID, Name: name}, nil
 }
 
-func (f *fakeIdentity) SetPassword(_ context.Context, p Principal, in PasswordInput) error {
+func (f *fakeIdentity) SetPassword(_ context.Context, p Principal, in PasswordInput) (*Session, error) {
 	if in.CurrentPassword == "" && !p.PasswordReset {
-		return apperr.Validation("current_password", "required")
+		return nil, apperr.Validation("current_password", "required")
 	}
 	f.password = append(f.password, p)
-	return nil
+	return &Session{AccessToken: "fresh-access", RefreshToken: "fresh", ExpiresIn: 900, User: Profile{ID: p.UserID, HasPassword: true}}, nil
 }
 
 type harness struct {
@@ -316,7 +316,7 @@ func TestHandlerSignedInRoutes(t *testing.T) {
 	if w := h.call(http.MethodGet, "/portal/me", reset, ""); w.Code != 200 {
 		t.Fatalf("reset me: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.call(http.MethodPost, "/portal/me/password", reset, `{"password":"newpass123"}`); w.Code != 204 {
+	if w := h.call(http.MethodPost, "/portal/me/password", reset, `{"password":"newpass123"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_token":"fresh"`) {
 		t.Fatalf("reset password: %d %s", w.Code, w.Body.String())
 	}
 	if len(h.svc.password) != 1 || !h.svc.password[0].PasswordReset || h.svc.password[0].UserID != 5 {
@@ -342,7 +342,7 @@ func TestHandlerSignedInRoutes(t *testing.T) {
 	if w.Code != 400 || decodeErr(t, w).Error.Fields["current_password"] == "" {
 		t.Fatalf("password without current: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.call(http.MethodPost, "/portal/me/password", user, `{"password":"newpass123","current_password":"secret123"}`); w.Code != 204 {
+	if w := h.call(http.MethodPost, "/portal/me/password", user, `{"password":"newpass123","current_password":"secret123"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"access_token":"fresh-access"`) {
 		t.Fatalf("password change: %d %s", w.Code, w.Body.String())
 	}
 	if w := h.call(http.MethodPost, "/portal/auth/logout", user, `{"refresh_token":"r"}`); w.Code != 204 {

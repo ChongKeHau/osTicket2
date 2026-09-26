@@ -86,8 +86,10 @@ export function updateMe(input: { name: string }): Promise<PortalProfile> {
   return portal.request<PortalProfile>('PATCH', '/me', { body: input })
 }
 
-export function setPassword(input: { password: string; current_password?: string }): Promise<void> {
-  return portal.request<void>('POST', '/me/password', { body: input })
+/** Sets the password. The API revokes every refresh token the user holds (this session's too)
+ *  and answers a fresh full session, which the caller adopts. */
+export function setPassword(input: { password: string; current_password?: string }): Promise<PortalSession> {
+  return portal.request<PortalSession>('POST', '/me/password', { body: input })
 }
 
 export async function downloadPortalFile(ticketId: number, fileId: number, name: string): Promise<void> {

@@ -108,10 +108,10 @@ func TestRegisterConfirmLogin(t *testing.T) {
 	}
 	pwr := Principal{UserID: s.User.ID, Email: s.User.Email, Verified: true, PasswordReset: true}
 	var ve *apperr.ValidationError
-	if err := svc.SetPassword(ctx, pwr, PasswordInput{Password: "short"}); !errors.As(err, &ve) || ve.Fields["password"] == "" {
+	if _, err := svc.SetPassword(ctx, pwr, PasswordInput{Password: "short"}); !errors.As(err, &ve) || ve.Fields["password"] == "" {
 		t.Fatalf("short password: %v", err)
 	}
-	if err := svc.SetPassword(ctx, pwr, PasswordInput{Password: "secret123"}); err != nil {
+	if _, err := svc.SetPassword(ctx, pwr, PasswordInput{Password: "secret123"}); err != nil {
 		t.Fatal(err)
 	}
 	s2, err := svc.Login(ctx, "PAT@example.test", "secret123")
@@ -175,7 +175,7 @@ func TestRegisterAttachesToAnonymousUser(t *testing.T) {
 	if err != nil || s.User.ID != anon.ID || s.Kind != "confirm" {
 		t.Fatalf("exchange %+v %v", s, err)
 	}
-	if err := svc.SetPassword(ctx, Principal{UserID: anon.ID, PasswordReset: true}, PasswordInput{Password: "secret123"}); err != nil {
+	if _, err := svc.SetPassword(ctx, Principal{UserID: anon.ID, PasswordReset: true}, PasswordInput{Password: "secret123"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Login(ctx, "a@x.test", "secret123"); err != nil {
@@ -360,8 +360,16 @@ func TestResetFlow(t *testing.T) {
 		t.Fatalf("claims %+v %v", c, err)
 	}
 	reset := Principal{UserID: u.ID, Email: u.Email, PasswordReset: true}
-	if err := svc.SetPassword(ctx, reset, PasswordInput{Password: "newpass123"}); err != nil {
+	fresh, err := svc.SetPassword(ctx, reset, PasswordInput{Password: "newpass123"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	// The reset session is replaced by a full one: refresh token, no pwr claim.
+	if fresh.RefreshToken == "" || fresh.TicketID != nil || fresh.Kind != "" || !fresh.User.HasPassword || !fresh.User.Verified {
+		t.Fatalf("session after reset %+v", fresh)
+	}
+	if c, err := svc.tokens.ParseAccess(fresh.AccessToken); err != nil || c.PasswordReset || c.TicketID != nil {
+		t.Fatalf("claims after reset %+v %v", c, err)
 	}
 	if p, err := svc.Me(ctx, u.ID); err != nil || !p.Verified || !p.HasPassword {
 		t.Fatalf("profile after reset %+v %v", p, err)
@@ -373,18 +381,25 @@ func TestResetFlow(t *testing.T) {
 
 	normal := Principal{UserID: u.ID, Email: u.Email, Verified: true}
 	var ve *apperr.ValidationError
-	if err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123"}); !errors.As(err, &ve) || ve.Fields["current_password"] == "" {
+	if _, err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123"}); !errors.As(err, &ve) || ve.Fields["current_password"] == "" {
 		t.Fatalf("missing current password: %v", err)
 	}
-	if err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123", CurrentPassword: "wrong-one"}); !errors.As(err, &ve) || ve.Fields["current_password"] == "" {
+	if _, err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123", CurrentPassword: "wrong-one"}); !errors.As(err, &ve) || ve.Fields["current_password"] == "" {
 		t.Fatalf("wrong current password: %v", err)
 	}
-	if err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123", CurrentPassword: "newpass123"}); err != nil {
+	changed, err := svc.SetPassword(ctx, normal, PasswordInput{Password: "another123", CurrentPassword: "newpass123"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	// A password change revokes every refresh token the user holds.
-	if _, err := svc.Refresh(ctx, login.RefreshToken); !errors.Is(err, apperr.ErrUnauthorized) {
-		t.Fatalf("refresh after password change: %v", err)
+	// A password change revokes every refresh token the user holds, then
+	// hands the caller a fresh session whose refresh token works.
+	for _, old := range []string{login.RefreshToken, fresh.RefreshToken} {
+		if _, err := svc.Refresh(ctx, old); !errors.Is(err, apperr.ErrUnauthorized) {
+			t.Fatalf("old refresh after password change: %v", err)
+		}
+	}
+	if s, err := svc.Refresh(ctx, changed.RefreshToken); err != nil || s.User.ID != u.ID {
+		t.Fatalf("refresh with the new session: %+v %v", s, err)
 	}
 	if _, err := svc.Login(ctx, "reset@x.test", "newpass123"); !errors.Is(err, apperr.ErrUnauthorized) {
 		t.Fatal("old password still accepted")

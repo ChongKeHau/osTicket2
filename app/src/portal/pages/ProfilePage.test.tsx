@@ -11,20 +11,24 @@ import { PortalShell } from '../PortalShell'
 import { RequirePortalAccount } from '../RequirePortalAccount'
 import { RequirePortalUser } from '../RequirePortalUser'
 import { ProfilePage } from './ProfilePage'
+import { TokenPage } from './TokenPage'
 
 const P = '/api/v1/portal'
+/** What POST /me/password answers: a fresh full session. */
+const fresh = { ...portalFixtures.session, access_token: 'paccess-pw', refresh_token: 'prefresh-pw' }
 
 beforeEach(() => portal.tokens.clear())
 afterEach(() => {
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
-function mount(route = '/portal/profile', refresh = 'prefresh-1') {
-  localStorage.setItem(PORTAL_REFRESH_KEY, refresh)
+function mount(route = '/portal/profile', refresh: string | null = 'prefresh-1') {
+  if (refresh) localStorage.setItem(PORTAL_REFRESH_KEY, refresh)
   return renderWithProviders(
     <PortalAuthProvider>
       <Routes>
         <Route path="/portal" element={<PortalShell />}>
+          <Route path="t/:token" element={<TokenPage />} />
           <Route element={<RequirePortalUser />}>
             <Route element={<RequirePortalAccount />}>
               <Route path="tickets" element={<h2>Tickets page</h2>} />
@@ -81,7 +85,7 @@ it('has_password: true shows Current, New and Confirm and posts password + curre
   let body: unknown
   server.use(http.post(`${P}/me/password`, async ({ request }) => {
     body = await request.json()
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json(fresh)
   }))
   mount()
   await screen.findByLabelText(/Name/)
@@ -99,7 +103,7 @@ it('has_password: false shows "Set a password" with no Current Password field an
   let body: unknown
   server.use(http.post(`${P}/me/password`, async ({ request }) => {
     body = await request.json()
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json(fresh)
   }))
   mount()
   await screen.findByLabelText(/Name/)
@@ -119,7 +123,7 @@ it('flips has_password after a successful password set (query invalidation)', as
     served = true
     return HttpResponse.json(p)
   }))
-  server.use(http.post(`${P}/me/password`, () => new HttpResponse(null, { status: 204 })))
+  server.use(http.post(`${P}/me/password`, () => HttpResponse.json(fresh)))
   mount()
   expect(await screen.findByText('Set a password')).toBeInTheDocument()
   await userEvent.type(screen.getByLabelText(/New Password/), 'newpass1')
@@ -129,9 +133,33 @@ it('flips has_password after a successful password set (query invalidation)', as
   expect(screen.getByLabelText(/Current Password/)).toBeInTheDocument()
 })
 
+it('adopts the fresh session a password change answers, replacing the revoked refresh token', async () => {
+  mount()
+  await userEvent.type(await screen.findByLabelText(/Current Password/), 'oldpass1')
+  await userEvent.type(screen.getByLabelText(/New Password/), 'newpass1')
+  await userEvent.type(screen.getByLabelText(/Confirm Password/), 'newpass1')
+  await userEvent.click(screen.getByRole('button', { name: 'Update Password' }))
+  expect(await screen.findByText('Password updated')).toBeInTheDocument()
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBe('prefresh-pw')
+  expect(portal.tokens.access).toBe('paccess-pw')
+})
+
+it('a reset session that sets its password is replaced by a full, persisted session', async () => {
+  mount('/portal/t/good-reset', null)
+  await userEvent.type(await screen.findByLabelText(/New Password/), 'newpass1')
+  await userEvent.type(screen.getByLabelText(/Confirm Password/), 'newpass1')
+  const current = screen.queryByLabelText(/Current Password/)
+  if (current) await userEvent.type(current, 'unused')
+  await userEvent.click(screen.getByRole('button', { name: 'Update Password' }))
+  expect(await screen.findByText('Password updated')).toBeInTheDocument()
+  expect(portal.tokens.session?.kind).toBeUndefined()
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBe('prefresh-pw')
+  expect(portal.tokens.access).toBe('paccess-pw')
+})
+
 it('shows a field error on mismatched new and confirm passwords without calling the API', async () => {
   let calls = 0
-  server.use(http.post(`${P}/me/password`, () => { calls++; return new HttpResponse(null, { status: 204 }) }))
+  server.use(http.post(`${P}/me/password`, () => { calls++; return HttpResponse.json(fresh) }))
   mount()
   await userEvent.type(await screen.findByLabelText(/Current Password/), 'oldpass1')
   await userEvent.type(screen.getByLabelText(/New Password/), 'newpass1')

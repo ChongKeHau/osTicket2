@@ -404,9 +404,11 @@ func (s *Service) UpdateName(ctx context.Context, userID int64, name string) (*P
 // SetPassword sets a new password and marks the address verified. The current
 // password is required unless the user has none yet or the session was opened
 // from a reset link. Every refresh token the user holds is revoked, including
-// the calling session's own; the client signs in again with the new password.
-func (s *Service) SetPassword(ctx context.Context, p Principal, in PasswordInput) error {
-	return db.WithTx(ctx, s.b, func(q *db.Queries) error {
+// the calling session's own, and the caller gets a fresh full session (access
+// and refresh token, no pwr claim) to continue with.
+func (s *Service) SetPassword(ctx context.Context, p Principal, in PasswordInput) (*Session, error) {
+	var sess *Session
+	err := db.WithTx(ctx, s.b, func(q *db.Queries) error {
 		u, err := q.GetEndUser(ctx, p.UserID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apperr.ErrNotFound
@@ -429,8 +431,19 @@ func (s *Service) SetPassword(ctx context.Context, p Principal, in PasswordInput
 		if err := q.SetEndUserPassword(ctx, db.SetEndUserPasswordParams{ID: u.ID, PasswordHash: &hash}); err != nil {
 			return err
 		}
-		return q.RevokeClientRefreshTokensForUser(ctx, u.ID)
+		if err := q.RevokeClientRefreshTokensForUser(ctx, u.ID); err != nil {
+			return err
+		}
+		if u, err = q.GetEndUser(ctx, u.ID); err != nil {
+			return err
+		}
+		sess, err = s.issue(ctx, q, u, nil, "")
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return sess, nil
 }
 
 // LoadClient loads the principal for RequireUser; an unknown user is ErrUnauthorized.
