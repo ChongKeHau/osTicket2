@@ -32,7 +32,7 @@ test('/portal renders the portal without touching the staff session', async () =
   })
   localStorage.setItem('ticket.refresh_token', 'refresh-1')
   renderWithProviders(<App />, { route: '/portal' })
-  expect(await screen.findByRole('heading', { name: 'Support Center' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Welcome to the Support Center' })).toBeInTheDocument()
   expect(await screen.findByText('Guest User')).toBeInTheDocument()
   server.events.removeAllListeners()
   expect(staffCalls).toEqual([])

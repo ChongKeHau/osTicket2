@@ -20,6 +20,9 @@ import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
 import { PortalAuthProvider } from './portal/PortalAuthContext'
 import { PortalShell } from './portal/PortalShell'
+import { TicketOpenedPage } from './portal/pages/CheckEmailPage'
+import { LandingPage } from './portal/pages/LandingPage'
+import { OpenTicketPage } from './portal/pages/OpenTicketPage'
 import { RequirePortalAccount } from './portal/RequirePortalAccount'
 import { RequirePortalUser } from './portal/RequirePortalUser'
 import { AppShell } from './ui/AppShell'
@@ -38,8 +41,9 @@ function PortalApp() {
   return (
     <Routes>
       <Route element={<PortalAuthProvider><PortalShell /></PortalAuthProvider>}>
-        <Route index element={<h2>Support Center</h2>} />
-        <Route path="open" element={<h2>Open a New Ticket</h2>} />
+        <Route index element={<LandingPage />} />
+        <Route path="open" element={<OpenTicketPage />} />
+        <Route path="opened/:number" element={<TicketOpenedPage />} />
         <Route path="login" element={<h2>Sign In</h2>} />
         <Route path="register" element={<h2>Register</h2>} />
         <Route path="reset" element={<h2>Reset</h2>} />
