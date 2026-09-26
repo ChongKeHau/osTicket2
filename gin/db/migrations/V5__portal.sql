@@ -33,6 +33,7 @@ CREATE TABLE client_refresh_token (
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX client_refresh_token_user_idx ON client_refresh_token (end_user_id);
 
 ALTER TABLE ticket ADD COLUMN user_id bigint REFERENCES end_user(id) ON DELETE SET NULL;
 CREATE INDEX ticket_user_idx ON ticket (user_id, last_message_at DESC);
@@ -44,8 +45,9 @@ ALTER TABLE thread_entry ADD COLUMN user_id bigint REFERENCES end_user(id) ON DE
 INSERT INTO end_user (email, name)
 SELECT DISTINCT ON (lower(requester_email)) requester_email, requester_name
 FROM ticket
-WHERE NOT EXISTS (SELECT 1 FROM end_user u WHERE lower(u.email) = lower(ticket.requester_email))
-ORDER BY lower(requester_email), created_at DESC;
+WHERE requester_email <> ''
+  AND NOT EXISTS (SELECT 1 FROM end_user u WHERE lower(u.email) = lower(ticket.requester_email))
+ORDER BY lower(requester_email), created_at DESC, id DESC;
 
 UPDATE ticket t SET user_id = u.id
 FROM end_user u WHERE lower(u.email) = lower(t.requester_email);

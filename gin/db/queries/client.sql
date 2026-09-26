@@ -45,7 +45,7 @@ SELECT t.id, t.number, t.subject, t.status_id, s.name AS status_name, s.state, d
 FROM ticket t JOIN ticket_status s ON s.id = t.status_id JOIN department d ON d.id = t.dept_id
 WHERE t.user_id = @user_id
   AND (sqlc.narg('state')::text IS NULL OR s.state::text = sqlc.narg('state'))
-ORDER BY t.last_message_at DESC
+ORDER BY t.last_message_at DESC, t.id DESC
 LIMIT @lim OFFSET @off;
 
 -- name: CountPortalTickets :one

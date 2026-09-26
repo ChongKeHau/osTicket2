@@ -86,6 +86,18 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":1`) || strings.Contains(w.Body.String(), "body_html") {
 		t.Fatalf("outbox = %d %s", w.Code, w.Body)
 	}
+	if !strings.Contains(w.Body.String(), `"ticket_id":`+itoa(tid)) {
+		t.Fatalf("outbox ticket_id missing: %s", w.Body)
+	}
+	// Account mail has no ticket: its ticket_id is JSON null, not 0.
+	mid, _ := NewMessageID(nil, "example.test")
+	if _, err := q.CreateOutbox(ctx, db.CreateOutboxParams{TemplateKey: "client_confirm", ToAddress: "pat@example.test", Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid}); err != nil {
+		t.Fatal(err)
+	}
+	w = do(e, http.MethodGet, "/api/v1/email/outbox?status=pending", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) {
+		t.Fatalf("ticketless outbox = %d %s", w.Code, w.Body)
+	}
 	if w := do(e, http.MethodGet, "/api/v1/email/outbox?status=bogus", ""); w.Code != 400 {
 		t.Fatalf("bad status = %d", w.Code)
 	}

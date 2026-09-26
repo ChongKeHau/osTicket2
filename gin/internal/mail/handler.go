@@ -118,7 +118,7 @@ func splitTemplateError(err error) (string, string) {
 
 type outboxJSON struct {
 	ID          int64   `json:"id"`
-	TicketID    int64   `json:"ticket_id"`
+	TicketID    *int64  `json:"ticket_id"`
 	EntryID     *int64  `json:"entry_id"`
 	TemplateKey string  `json:"template_key"`
 	ToAddress   string  `json:"to_address"`
@@ -163,10 +163,7 @@ func (h *Handler) listOutbox(c *gin.Context) {
 	}
 	items := make([]outboxJSON, 0, len(rows))
 	for _, r := range rows {
-		j := outboxJSON{ID: r.ID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
-		if r.TicketID != nil {
-			j.TicketID = *r.TicketID
-		}
+		j := outboxJSON{ID: r.ID, TicketID: r.TicketID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
 		if r.SentAt != nil {
 			s := r.SentAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 			j.SentAt = &s

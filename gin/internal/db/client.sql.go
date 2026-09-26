@@ -347,7 +347,7 @@ SELECT t.id, t.number, t.subject, t.status_id, s.name AS status_name, s.state, d
 FROM ticket t JOIN ticket_status s ON s.id = t.status_id JOIN department d ON d.id = t.dept_id
 WHERE t.user_id = $1
   AND ($2::text IS NULL OR s.state::text = $2)
-ORDER BY t.last_message_at DESC
+ORDER BY t.last_message_at DESC, t.id DESC
 LIMIT $4 OFFSET $3
 `
 

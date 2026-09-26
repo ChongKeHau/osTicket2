@@ -14,7 +14,7 @@ func TestTestMessageContents(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(raw)
-	for _, want := range []string{"To: you@example.test", "Subject: ", "Message-ID: <ticket-0-", "@example.test>", "Desk"} {
+	for _, want := range []string{"To: you@example.test", "Subject: ", "Message-ID: <client-", "@example.test>", "Desk"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("test message missing %q:\n%s", want, s)
 		}

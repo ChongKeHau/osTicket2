@@ -3,10 +3,12 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/apperr"
@@ -46,6 +48,8 @@ func TestFailMapping(t *testing.T) {
 		{apperr.ErrConflict, 409, "conflict"},
 		{apperr.ErrPayloadTooLarge, 413, "payload_too_large"},
 		{apperr.ErrRateLimited, 429, "rate_limited"},
+		{apperr.ErrTokenInvalid, 410, "token_invalid"},
+		{apperr.ErrGuestSession, 403, "guest_session"},
 		{errors.New("boom"), 500, "internal"},
 	}
 	for _, tc := range cases {
@@ -61,6 +65,20 @@ func TestFailMapping(t *testing.T) {
 		if tc.status == 400 && e.Error.Fields["subject"] != "required" {
 			t.Errorf("fields missing: %+v", e.Error.Fields)
 		}
+		if tc.status == 429 && e.Error.Fields != nil {
+			t.Errorf("plain ErrRateLimited must carry no fields: %+v", e.Error.Fields)
+		}
+	}
+}
+
+func TestFailRateLimitedCarriesRetryAfter(t *testing.T) {
+	r := gin.New()
+	r.GET("/x", func(c *gin.Context) {
+		Fail(c, fmt.Errorf("wrapped: %w", apperr.RateLimited(41*time.Second+200*time.Millisecond)))
+	})
+	w, e := do(t, r, http.MethodGet, "/x", "")
+	if w.Code != 429 || e.Error.Code != "rate_limited" || e.Error.Fields["retry_after"] != "42" {
+		t.Fatalf("got %d %+v", w.Code, e.Error)
 	}
 }
 

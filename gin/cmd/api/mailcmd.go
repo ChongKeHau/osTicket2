@@ -74,7 +74,7 @@ func parseMailTestFlags(args []string) (string, error) {
 
 // testMessage builds the fixed message mail-test sends.
 func testMessage(m config.MailConfig, to string) ([]byte, error) {
-	mid, err := mail.NewMessageID(0, m.Domain)
+	mid, err := mail.NewMessageID(nil, m.Domain)
 	if err != nil {
 		return nil, err
 	}

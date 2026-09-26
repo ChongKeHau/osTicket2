@@ -69,7 +69,19 @@ func TestAccessTokenRejections(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A correctly signed, unexpired token carrying the portal's "client"
+	// audience must never pass as a staff token.
+	clientAud := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "1", Audience: jwt.ClaimStrings{"client"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+	})
+	clientAudRaw, err := clientAud.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for name, tok := range map[string]string{
+		"client audience":   clientAudRaw,
 		"expired":           old,
 		"wrong key":         other,
 		"alg none":          noneRaw,

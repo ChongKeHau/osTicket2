@@ -18,7 +18,7 @@ type SessionService interface {
 
 type Handler struct {
 	svc     SessionService
-	limiter *loginRateLimiter
+	limiter *RateLimiter
 }
 
 func NewHandler(svc SessionService) *Handler {
@@ -50,7 +50,7 @@ func (h *Handler) login(c *gin.Context) {
 	// allow reserves the attempt slot atomically with the check (see its
 	// doc comment): a failed login leaves the reservation in place, and
 	// reset below undoes it on success, so only failures count.
-	if !h.limiter.allow(key) {
+	if !h.limiter.Allow(key) {
 		httpx.Fail(c, apperr.ErrRateLimited)
 		return
 	}
@@ -59,7 +59,7 @@ func (h *Handler) login(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.limiter.reset(key)
+	h.limiter.Reset(key)
 	c.JSON(http.StatusOK, sess)
 }
 

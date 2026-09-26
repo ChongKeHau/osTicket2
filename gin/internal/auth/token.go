@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -63,6 +64,11 @@ func (t *Tokens) ParseAccess(raw string) (Claims, error) {
 	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
 	if err != nil {
 		return Claims{}, fmt.Errorf("%w: %v", apperr.ErrUnauthorized, err)
+	}
+	// Staff tokens carry no audience; the customer portal's tokens carry
+	// "client" and must never authenticate a staff request.
+	if slices.Contains(claims.Audience, "client") {
+		return Claims{}, fmt.Errorf("%w: client token", apperr.ErrUnauthorized)
 	}
 	return claims, nil
 }

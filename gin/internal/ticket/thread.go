@@ -124,7 +124,7 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 		}
 		eid := entry.ID
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "ticket_reply", TicketID: id, EntryID: &eid,
+			TemplateKey: "ticket_reply", TicketID: &id, EntryID: &eid,
 			To:   []mail.Recipient{{Name: fresh.RequesterName, Address: fresh.RequesterEmail}},
 			Vars: ticketVars(fresh, fullName(&st.FirstName, &st.LastName), in.Body, format),
 		}); err != nil {
@@ -274,7 +274,7 @@ func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffI
 			return nil
 		}
 		return s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "assigned_alert", TicketID: id,
+			TemplateKey: "assigned_alert", TicketID: &id,
 			To:   []mail.Recipient{{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email}},
 			Vars: ticketVars(row, fullName(&st.FirstName, &st.LastName), "", db.BodyFormatText),
 		})
@@ -392,7 +392,7 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		}
 		eid := entry.ID
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "message_alert", TicketID: ticketID, EntryID: &eid, To: to,
+			TemplateKey: "message_alert", TicketID: &ticketID, EntryID: &eid, To: to,
 			Vars: ticketVars(row, "", in.Body, format),
 		}); err != nil {
 			return err

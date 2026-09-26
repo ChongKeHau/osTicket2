@@ -210,7 +210,7 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 			}
 			eid := entry.ID
 			if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-				TemplateKey: "ticket_autoresp", TicketID: id, EntryID: &eid, AutoSubmitted: true,
+				TemplateKey: "ticket_autoresp", TicketID: &id, EntryID: &eid, AutoSubmitted: true,
 				To:   []mail.Recipient{{Name: in.RequesterName, Address: in.RequesterEmail}},
 				Vars: ticketVars(row, "", in.Message, format),
 			}); err != nil {
