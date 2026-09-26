@@ -104,8 +104,8 @@ func (f *flakyTransport) Close() error { return nil }
 
 func queueOne(t *testing.T, q *db.Queries, tid int64, to string) int64 {
 	t.Helper()
-	mid, _ := NewMessageID(tid, "example.test")
-	id, err := q.CreateOutbox(context.Background(), db.CreateOutboxParams{TicketID: tid, TemplateKey: "ticket_reply", ToAddress: to, Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
+	mid, _ := NewMessageID(&tid, "example.test")
+	id, err := q.CreateOutbox(context.Background(), db.CreateOutboxParams{TicketID: &tid, TemplateKey: "ticket_reply", ToAddress: to, Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,6 +146,26 @@ func TestSenderMarksSentAndRecordsRejection(t *testing.T) {
 	// Nothing due now.
 	if sent, failed, _ := s.RunOnce(ctx); sent != 0 || failed != 0 {
 		t.Fatal("row scheduled in the future must not be claimed")
+	}
+}
+
+func TestSenderSendsTicketlessMail(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	mid, _ := NewMessageID(nil, "example.test")
+	id, err := q.CreateOutbox(ctx, db.CreateOutboxParams{TemplateKey: "client_confirm", ToAddress: "pat@example.test", Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := &flakyTransport{}
+	s := NewSender(tx, tr, Address{Name: "Desk", Address: "desk@example.test"}, 20)
+	if sent, failed, err := s.RunOnce(ctx); err != nil || sent != 1 || failed != 0 {
+		t.Fatalf("run = %d %d %v", sent, failed, err)
+	}
+	row, _ := q.GetOutbox(ctx, id)
+	if row.Status != db.EmailStatusSent || row.TicketID != nil || len(tr.to) != 1 || tr.to[0] != "pat@example.test" {
+		t.Fatalf("row = %+v to = %v", row, tr.to)
 	}
 }
 

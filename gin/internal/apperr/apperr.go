@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
@@ -15,7 +16,24 @@ var (
 	ErrConflict        = errors.New("conflict")
 	ErrPayloadTooLarge = errors.New("payload too large")
 	ErrRateLimited     = errors.New("rate limited")
+	// ErrTokenInvalid is an emailed one-time token that is unknown, expired or used.
+	ErrTokenInvalid = errors.New("token invalid")
+	// ErrGuestSession is a guest (single-ticket) portal session on an account-only route.
+	ErrGuestSession = errors.New("guest session")
+	// ErrResetSession is a password-reset portal session outside the password routes.
+	ErrResetSession = errors.New("reset session")
 )
+
+// RateLimitedError is ErrRateLimited with the wait until the next attempt may succeed.
+type RateLimitedError struct{ RetryAfter time.Duration }
+
+func (e *RateLimitedError) Error() string { return "rate limited" }
+
+// Is makes errors.Is(err, ErrRateLimited) hold for a *RateLimitedError.
+func (e *RateLimitedError) Is(target error) bool { return target == ErrRateLimited }
+
+// RateLimited builds a RateLimitedError.
+func RateLimited(after time.Duration) error { return &RateLimitedError{RetryAfter: after} }
 
 // ValidationError carries per-field messages for a 400 response.
 type ValidationError struct {

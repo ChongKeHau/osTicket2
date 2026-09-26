@@ -13,7 +13,7 @@ func TestEmailMigrationSeedsTemplatesAndEnum(t *testing.T) {
 	ctx := context.Background()
 	q := db.New(tx)
 	tpls, err := q.ListEmailTemplates(ctx)
-	if err != nil || len(tpls) != 4 {
+	if err != nil || len(tpls) != 8 {
 		t.Fatalf("templates = %d, %v", len(tpls), err)
 	}
 	keys := map[string]bool{}

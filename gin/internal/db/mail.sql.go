@@ -136,7 +136,7 @@ RETURNING id
 `
 
 type CreateOutboxParams struct {
-	TicketID      int64
+	TicketID      *int64
 	EntryID       *int64
 	TemplateKey   string
 	ToAddress     string
@@ -247,7 +247,7 @@ ORDER BY sent_at DESC LIMIT 1
 `
 
 type LastSentMessageIDParams struct {
-	TicketID  int64
+	TicketID  *int64
 	ToAddress string
 }
 
@@ -346,7 +346,7 @@ type ListOutboxParams struct {
 
 type ListOutboxRow struct {
 	ID            int64
-	TicketID      int64
+	TicketID      *int64
 	EntryID       *int64
 	TemplateKey   string
 	ToAddress     string

@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/grandpine/ticket-api/internal/attachment"
 	"github.com/grandpine/ticket-api/internal/auth"
+	"github.com/grandpine/ticket-api/internal/client"
 	"github.com/grandpine/ticket-api/internal/config"
 	"github.com/grandpine/ticket-api/internal/dashboard"
 	"github.com/grandpine/ticket-api/internal/db"
@@ -105,8 +106,21 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	dashH := dashboard.NewHandler(dashboard.NewService(pool))
 	notifier, renderer := buildMail(cfg)
 	ticketH := ticket.NewHandler(ticket.NewService(pool, ticket.WithNotifier(notifier)))
-	mailH := mail.NewHandler(pool, renderer)
-	fileH := attachment.NewHandler(attachment.NewService(pool, store, cfg.MaxUploadBytes, cfg.AllowedMIME), cfg.MaxUploadBytes)
+	mailH := mail.NewHandler(pool, renderer, mail.WithExposeLinks(cfg.MailExposeLinks))
+	if cfg.MailExposeLinks {
+		slog.Warn("MAIL_EXPOSE_LINKS=true: admins can read live portal sign-in links in the outbox; dev and e2e only")
+	}
+	fileSvc := attachment.NewService(pool, store, cfg.MaxUploadBytes, cfg.AllowedMIME)
+	fileH := attachment.NewHandler(fileSvc, cfg.MaxUploadBytes)
+
+	// Customer portal: its own token audience, identity service and limiters.
+	// Links in portal mail use APP_BASE_URL even when mail is disabled.
+	ctokens := client.NewTokens(cfg.JWTSecret, accessTTL)
+	ident := client.NewService(pool, ctokens, refreshTTL, notifier, cfg.AppBaseURL, cfg.Mail.SiteName)
+	portalSvc := client.NewPortalService(pool, notifier, fileSvc, ident, client.NewLimiter(10, time.Hour), cfg.Mail.SiteName)
+	// Auth requests: 10 a minute; portal uploads (signed in or not) get their own
+	// hourly per-IP budget, separate from the ticket-open budget above.
+	portalH := client.NewHandler(ident, client.NewLimiter(10, time.Minute), portalSvc, client.NewLimiter(10, time.Hour), cfg.MaxUploadBytes)
 
 	engine := server.New(server.Options{
 		Pinger:         pool,
@@ -115,6 +129,9 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		RequireAuth:    auth.RequireAuth(tokens, authSvc),
 		Mount: func(public, private *gin.RouterGroup) {
 			authH.Mount(public, private)
+			portal := public.Group("/portal")
+			portalH.MountAuth(portal, ctokens)
+			portalH.MountPortal(portal, ctokens)
 			deptH.Mount(private)
 			topicH.Mount(private)
 			staffH.Mount(private)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -48,11 +49,16 @@ type List[T any] struct {
 // Fail writes the error envelope for err and aborts the request.
 func Fail(c *gin.Context, err error) {
 	var ve *apperr.ValidationError
+	var rl *apperr.RateLimitedError
 	switch {
 	case errors.As(err, &ve):
 		write(c, http.StatusBadRequest, "validation_failed", "request validation failed", ve.Fields)
 	case errors.Is(err, apperr.ErrUnauthorized):
 		write(c, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
+	case errors.Is(err, apperr.ErrGuestSession):
+		write(c, http.StatusForbidden, "guest_session", "sign in to an account to do this", nil)
+	case errors.Is(err, apperr.ErrResetSession):
+		write(c, http.StatusForbidden, "reset_session", "finish setting your password first", nil)
 	case errors.Is(err, apperr.ErrForbidden):
 		write(c, http.StatusForbidden, "forbidden", err.Error(), nil)
 	case errors.Is(err, apperr.ErrNotFound):
@@ -61,6 +67,12 @@ func Fail(c *gin.Context, err error) {
 		write(c, http.StatusConflict, "conflict", err.Error(), nil)
 	case errors.Is(err, apperr.ErrPayloadTooLarge):
 		write(c, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error(), nil)
+	case errors.Is(err, apperr.ErrTokenInvalid):
+		write(c, http.StatusGone, "token_invalid", "this link has expired or was already used", nil)
+	case errors.As(err, &rl):
+		secs := int(math.Ceil(rl.RetryAfter.Seconds()))
+		write(c, http.StatusTooManyRequests, "rate_limited", "too many attempts, try again later",
+			map[string]string{"retry_after": strconv.Itoa(secs)})
 	case errors.Is(err, apperr.ErrRateLimited):
 		write(c, http.StatusTooManyRequests, "rate_limited", "too many attempts, try again later", nil)
 	default:

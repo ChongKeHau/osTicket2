@@ -44,7 +44,7 @@ func TestTemplatesListAndPatch(t *testing.T) {
 		Items []map[string]any `json:"items"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
-	if len(list.Items) != 4 || list.Items[0]["key"] != "assigned_alert" {
+	if len(list.Items) != 8 || list.Items[0]["key"] != "assigned_alert" {
 		t.Fatalf("items = %v", list.Items)
 	}
 	w = do(e, http.MethodPatch, "/api/v1/email/templates/ticket_reply", `{"subject":"New {{.Number}}"}`)
@@ -86,6 +86,49 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":1`) || strings.Contains(w.Body.String(), "body_html") {
 		t.Fatalf("outbox = %d %s", w.Code, w.Body)
 	}
+	if !strings.Contains(w.Body.String(), `"ticket_id":`+itoa(tid)) {
+		t.Fatalf("outbox ticket_id missing: %s", w.Body)
+	}
+	// Account mail has no ticket: its ticket_id is JSON null, not 0.
+	mid, _ := NewMessageID(nil, "example.test")
+	ticketless, err := q.CreateOutbox(ctx, db.CreateOutboxParams{TemplateKey: "client_confirm", ToAddress: "pat@example.test", Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = do(e, http.MethodGet, "/api/v1/email/outbox?status=pending", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) {
+		t.Fatalf("ticketless outbox = %d %s", w.Code, w.Body)
+	}
+	// Detail: the full row with both bodies; the ticketless row's ticket_id is null.
+	w = do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), "")
+	var detail struct {
+		ID       int64  `json:"id"`
+		TicketID *int64 `json:"ticket_id"`
+		Subject  string `json:"subject"`
+		Status   string `json:"status"`
+		BodyText string `json:"body_text"`
+		BodyHTML string `json:"body_html"`
+	}
+	if w.Code != 200 {
+		t.Fatalf("outbox detail = %d %s", w.Code, w.Body)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := q.GetOutbox(ctx, id)
+	if detail.ID != id || detail.TicketID == nil || *detail.TicketID != tid || detail.Status != "failed" || detail.Subject != want.Subject || detail.BodyText != want.BodyText || detail.BodyHTML != want.BodyHtml || detail.BodyText == "" {
+		t.Fatalf("outbox detail = %+v", detail)
+	}
+	w = do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(ticketless), "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ticket_id":null`) || !strings.Contains(w.Body.String(), `"body_text":"t"`) || !strings.Contains(w.Body.String(), `"body_html":"\u003cp\u003eh\u003c/p\u003e"`) {
+		t.Fatalf("ticketless detail = %d %s", w.Code, w.Body)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/999999", ""); w.Code != 404 {
+		t.Fatalf("detail missing = %d", w.Code)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/abc", ""); w.Code != 400 {
+		t.Fatalf("detail bad id = %d", w.Code)
+	}
 	if w := do(e, http.MethodGet, "/api/v1/email/outbox?status=bogus", ""); w.Code != 400 {
 		t.Fatalf("bad status = %d", w.Code)
 	}
@@ -115,6 +158,71 @@ func TestOutboxListRetryAndInbound(t *testing.T) {
 	if w := do(e, http.MethodGet, "/api/v1/email/templates", ""); w.Code != 403 {
 		t.Fatalf("non-admin = %d", w.Code)
 	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), ""); w.Code != 403 {
+		t.Fatalf("non-admin detail = %d", w.Code)
+	}
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// Portal links in client_* mail are account keys: the admin outbox shows them
+// with the token redacted unless the API runs with MAIL_EXPOSE_LINKS=true.
+func TestOutboxRedactsPortalLinks(t *testing.T) {
+	tx := testutil.Tx(t)
+	ctx := context.Background()
+	q := db.New(tx)
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	link := "https://desk.example.test/portal/t/" + token
+	mk := func(key string) int64 {
+		t.Helper()
+		mid, _ := NewMessageID(nil, "example.test")
+		id, err := q.CreateOutbox(ctx, db.CreateOutboxParams{
+			TemplateKey: key, ToAddress: "pat@example.test", Subject: "Your link",
+			BodyHtml: `<p><a href="` + link + `">Sign in</a></p>`, BodyText: "Sign in: " + link + "\nThanks", MessageID: mid,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	signin, other := mk("client_signin"), mk("ticket_reply")
+	type detail struct {
+		BodyText string `json:"body_text"`
+		BodyHTML string `json:"body_html"`
+	}
+	get := func(e *gin.Engine, id int64) detail {
+		t.Helper()
+		w := do(e, http.MethodGet, "/api/v1/email/outbox/"+itoa(id), "")
+		if w.Code != 200 {
+			t.Fatalf("detail %d = %d %s", id, w.Code, w.Body)
+		}
+		var d detail
+		if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	admin := auth.Principal{StaffID: 1, IsAdmin: true}
+
+	e := adminRouter(NewHandler(tx, NewRenderer(time.Minute)), admin)
+	d := get(e, signin)
+	if strings.Contains(d.BodyText+d.BodyHTML, token) {
+		t.Fatalf("token exposed by default: %+v", d)
+	}
+	if d.BodyText != "Sign in: https://desk.example.test/portal/t/[redacted]\nThanks" ||
+		d.BodyHTML != `<p><a href="https://desk.example.test/portal/t/[redacted]">Sign in</a></p>` {
+		t.Fatalf("redacted bodies: %+v", d)
+	}
+	if w := do(e, http.MethodGet, "/api/v1/email/outbox?status=pending", ""); w.Code != 200 || strings.Contains(w.Body.String(), token) {
+		t.Fatalf("list = %d %s", w.Code, w.Body)
+	}
+	// Only client_* templates carry account links; other mail is shown as stored.
+	if d := get(e, other); !strings.Contains(d.BodyText, token) {
+		t.Fatalf("non-client mail altered: %+v", d)
+	}
+
+	e = adminRouter(NewHandler(tx, NewRenderer(time.Minute), WithExposeLinks(true)), admin)
+	if d := get(e, signin); !strings.Contains(d.BodyText, link) || !strings.Contains(d.BodyHTML, link) {
+		t.Fatalf("MAIL_EXPOSE_LINKS=true still redacts: %+v", d)
+	}
+}

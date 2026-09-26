@@ -43,7 +43,7 @@ func TestCreateEnqueuesAutoresponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := outbox(t, f)
-	if len(rows) != 1 || rows[0].TemplateKey != "ticket_autoresp" || rows[0].ToAddress != "pat@example.test" || rows[0].TicketID != tk.ID || !rows[0].AutoSubmitted {
+	if len(rows) != 1 || rows[0].TemplateKey != "ticket_autoresp" || rows[0].ToAddress != "pat@example.test" || rows[0].TicketID == nil || *rows[0].TicketID != tk.ID || !rows[0].AutoSubmitted {
 		t.Fatalf("rows = %+v", rows)
 	}
 	if rows[0].Subject != "[#"+tk.Number+"] Printer" {

@@ -52,6 +52,50 @@ func (ns NullBodyFormat) Value() (driver.Value, error) {
 	return string(ns.BodyFormat), nil
 }
 
+type ClientTokenKind string
+
+const (
+	ClientTokenKindConfirm ClientTokenKind = "confirm"
+	ClientTokenKindReset   ClientTokenKind = "reset"
+	ClientTokenKindSignin  ClientTokenKind = "signin"
+	ClientTokenKindAccess  ClientTokenKind = "access"
+)
+
+func (e *ClientTokenKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClientTokenKind(s)
+	case string:
+		*e = ClientTokenKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClientTokenKind: %T", src)
+	}
+	return nil
+}
+
+type NullClientTokenKind struct {
+	ClientTokenKind ClientTokenKind
+	Valid           bool // Valid is true if ClientTokenKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClientTokenKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClientTokenKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClientTokenKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClientTokenKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClientTokenKind), nil
+}
+
 type EmailStatus string
 
 const (
@@ -325,6 +369,28 @@ type Attachment struct {
 	UpdatedAt     time.Time
 }
 
+type ClientRefreshToken struct {
+	ID        int64
+	TokenHash string
+	EndUserID int64
+	TicketID  *int64
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type ClientToken struct {
+	ID        int64
+	EndUserID int64
+	Kind      ClientTokenKind
+	TokenHash string
+	TicketID  *int64
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
 type Department struct {
 	ID        int64
 	Name      string
@@ -336,7 +402,7 @@ type Department struct {
 
 type EmailOutbox struct {
 	ID            int64
-	TicketID      int64
+	TicketID      *int64
 	EntryID       *int64
 	TemplateKey   string
 	ToAddress     string
@@ -366,17 +432,28 @@ type EmailTemplate struct {
 	UpdatedAt time.Time
 }
 
+type EndUser struct {
+	ID              int64
+	Email           string
+	Name            string
+	PasswordHash    *string
+	EmailVerifiedAt *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type File struct {
-	ID         int64
-	Key        string
-	Name       string
-	Mime       string
-	Size       int64
-	Sha256     string
-	Backend    string
-	UploadedBy *int64
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID          int64
+	Key         string
+	Name        string
+	Mime        string
+	Size        int64
+	Sha256      string
+	Backend     string
+	UploadedBy  *int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	AccessToken *string
 }
 
 type HelpTopic struct {
@@ -446,6 +523,7 @@ type ThreadEntry struct {
 	ParentID  *int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	UserID    *int64
 }
 
 type Ticket struct {
@@ -468,6 +546,7 @@ type Ticket struct {
 	Extra           []byte
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	UserID          *int64
 }
 
 type TicketEvent struct {

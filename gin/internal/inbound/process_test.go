@@ -93,6 +93,23 @@ func TestProcessCreatesTicketAndDedupes(t *testing.T) {
 	}
 }
 
+// A ticket opened by mail is linked to the end user for the sender's address,
+// so the sender sees it in the portal.
+func TestProcessCreatedTicketLinksEndUser(t *testing.T) {
+	f := newProcFixture(t)
+	out, err := f.proc.Process(f.ctx, fixture(t, "plain.eml"))
+	if err != nil || out.TicketID == nil {
+		t.Fatalf("out = %+v, %v", out, err)
+	}
+	var email *string
+	if err := f.tx.QueryRow(f.ctx, `SELECT u.email FROM ticket t LEFT JOIN end_user u ON u.id = t.user_id WHERE t.id = $1`, *out.TicketID).Scan(&email); err != nil {
+		t.Fatal(err)
+	}
+	if email == nil || !strings.EqualFold(*email, "pat@example.test") {
+		t.Fatalf("owner = %v", email)
+	}
+}
+
 func TestProcessReplyCaseInsensitiveRequester(t *testing.T) {
 	f := newProcFixture(t)
 	out, _ := f.proc.Process(f.ctx, fixture(t, "plain.eml"))

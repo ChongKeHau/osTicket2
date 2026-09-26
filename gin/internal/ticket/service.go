@@ -40,19 +40,28 @@ type Service interface {
 // SystemPrincipal acts for changes that no staff member made (inbound mail).
 var SystemPrincipal = auth.Principal{IsAdmin: true}
 
-// ExternalCreateInput opens a ticket on behalf of an outside requester (inbound mail).
+// ExternalCreateInput opens a ticket on behalf of an outside requester
+// (inbound mail, or the customer portal with Source "web").
 type ExternalCreateInput struct {
 	Subject, Body, Format         string
 	RequesterName, RequesterEmail string
-	DeptID                        int64
-	FileIDs                       []int64
-	AutoSubmitted                 bool
+	// DeptID 0 means none given: the topic's department applies.
+	DeptID        int64
+	TopicID       *int64
+	FileIDs       []int64
+	AutoSubmitted bool
+	// Source is the ticket source; empty means "email".
+	Source string
+	// UserID is the end user who owns the ticket and wrote its first message.
+	UserID *int64
 }
 
-// MessageInput appends a requester message (inbound mail) to a ticket.
+// MessageInput appends a requester message (inbound mail or the portal) to a ticket.
 type MessageInput struct {
 	Poster, Body, Format string
 	FileIDs              []int64
+	// UserID is the end user who wrote the message, when known.
+	UserID *int64
 }
 
 type service struct {
@@ -93,12 +102,24 @@ func (s *service) Create(ctx context.Context, p auth.Principal, in CreateInput) 
 }
 
 func (s *service) CreateExternal(ctx context.Context, in ExternalCreateInput) (*Ticket, error) {
-	dept := in.DeptID
+	var dept *int64
+	if in.DeptID != 0 {
+		d := in.DeptID
+		dept = &d
+	}
+	source, via := in.Source, "email"
+	if source == "" {
+		source = "email"
+	}
+	if source == "web" {
+		via = "portal"
+	}
 	return s.create(ctx, SystemPrincipal, CreateInput{
 		Subject: in.Subject, Message: in.Body, MessageFormat: in.Format,
 		RequesterName: in.RequesterName, RequesterEmail: in.RequesterEmail,
-		DeptID: &dept, Source: "email", FileIDs: in.FileIDs, AutoSubmitted: in.AutoSubmitted,
-	}, nil, "email")
+		DeptID: dept, TopicID: in.TopicID, Source: source, FileIDs: in.FileIDs,
+		AutoSubmitted: in.AutoSubmitted, UserID: in.UserID,
+	}, nil, via)
 }
 
 // via records how the ticket was created (e.g. "email" for inbound mail) on
@@ -182,6 +203,20 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 		if err != nil {
 			return err
 		}
+		// Every ticket belongs to its requester's end user (spec §2), so the
+		// requester sees it in the portal however it was opened. The portal
+		// passes the user it already resolved; otherwise resolve it here.
+		owner := in.UserID
+		if owner == nil {
+			if owner, err = resolveEndUser(ctx, q, in.RequesterEmail, in.RequesterName); err != nil {
+				return err
+			}
+		}
+		if owner != nil {
+			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: owner}); err != nil {
+				return err
+			}
+		}
 		poster := in.RequesterName
 		if poster == "" {
 			poster = in.RequesterEmail
@@ -192,6 +227,11 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 		})
 		if err != nil {
 			return err
+		}
+		if in.UserID != nil {
+			if err := q.SetThreadEntryUser(ctx, db.SetThreadEntryUserParams{ID: entry.ID, UserID: in.UserID}); err != nil {
+				return err
+			}
 		}
 		if err := attachFiles(ctx, q, p, entry.ID, in.FileIDs); err != nil {
 			return err
@@ -210,7 +250,7 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 			}
 			eid := entry.ID
 			if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-				TemplateKey: "ticket_autoresp", TicketID: id, EntryID: &eid, AutoSubmitted: true,
+				TemplateKey: "ticket_autoresp", TicketID: &id, EntryID: &eid, AutoSubmitted: true,
 				To:   []mail.Recipient{{Name: in.RequesterName, Address: in.RequesterEmail}},
 				Vars: ticketVars(row, "", in.Message, format),
 			}); err != nil {
@@ -317,7 +357,8 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 		if err := q.LockTicket(ctx, id); err != nil {
 			return err
 		}
-		if _, err := loadVisible(ctx, q, p, id); err != nil {
+		before, err := loadVisible(ctx, q, p, id)
+		if err != nil {
 			return err
 		}
 		fields := map[string]string{}
@@ -349,10 +390,25 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 		}); err != nil {
 			return err
 		}
+		// A new requester address moves the ticket to that address's end user,
+		// so the previous requester's portal sessions lose it and the new one's
+		// gain it. The new user is named only when the update names them.
+		if in.RequesterEmail != nil && !strings.EqualFold(strings.TrimSpace(*in.RequesterEmail), before.RequesterEmail) {
+			name := ""
+			if in.RequesterName != nil {
+				name = *in.RequesterName
+			}
+			owner, err := resolveEndUser(ctx, q, *in.RequesterEmail, name)
+			if err != nil {
+				return err
+			}
+			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: owner}); err != nil {
+				return err
+			}
+		}
 		if err := event(ctx, q, id, &p.StaffID, db.TicketEventKindEdited, map[string]any{"fields": changedFields(in)}); err != nil {
 			return err
 		}
-		var err error
 		out, err = get(ctx, q, p, id)
 		return err
 	})

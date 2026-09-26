@@ -180,6 +180,46 @@ describe('outbox', () => {
   })
 })
 
+describe('outbox message', () => {
+  test('the subject links to the message page, which shows headers and the text body in a <pre>', async () => {
+    renderWithProviders(<App />, { route: '/admin/email/outbox' })
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    const link = within(bodyRows()[0]!).getByRole('link', { name: '[#000007] Printer' })
+    expect(link).toHaveAttribute('href', '/admin/email/outbox/1')
+    await userEvent.click(link)
+    expect(await screen.findByRole('heading', { name: 'Outbox Message #1' })).toBeInTheDocument()
+    expect(screen.getByText('R <r@x.test>')).toBeInTheDocument()
+    expect(screen.getByText('ticket_autoresp')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '#7' })).toHaveAttribute('href', '/tickets/7')
+    const pre = document.querySelector('pre')!
+    expect(pre).toHaveAccessibleName('Text body')
+    expect(pre.textContent).toBe('Hello R,\n\nhttp://localhost:5173/portal/t/abc123')
+    expect(screen.getByLabelText('HTML body')).toHaveTextContent('<p>Hello R,</p>')
+    expect(within(subNav()).getByRole('link', { name: 'Outbox' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Back to Outbox' })).toHaveAttribute('href', '/admin/email/outbox')
+  })
+
+  test('a ticketless row (account mail) shows a dash for the ticket, in the list and on the page', async () => {
+    const row = { ...emailFixtures.outbox[1]!, id: 9, ticket_id: null, entry_id: null, template_key: 'client_confirm', subject: 'Confirm your account' }
+    server.use(
+      http.get('/api/v1/email/outbox', () => HttpResponse.json({ items: [row], page: 1, page_size: 25, total: 1 })),
+      http.get('/api/v1/email/outbox/9', () => HttpResponse.json({ ...row, body_text: 'confirm', body_html: '<p>confirm</p>' })),
+    )
+    renderWithProviders(<App />, { route: '/admin/email/outbox' })
+    await screen.findByRole('link', { name: 'Confirm your account' })
+    expect(within(bodyRows()[0]!).getAllByRole('cell')[1]).toHaveTextContent(/^—$/)
+    expect(within(bodyRows()[0]!).queryByRole('link', { name: /^#/ })).not.toBeInTheDocument()
+    await userEvent.click(within(bodyRows()[0]!).getByRole('link', { name: 'Confirm your account' }))
+    expect(await screen.findByRole('heading', { name: 'Outbox Message #9' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^#/ })).not.toBeInTheDocument()
+  })
+
+  test('an unknown message says so', async () => {
+    renderWithProviders(<App />, { route: '/admin/email/outbox/999' })
+    expect(await screen.findByText('Message not found.')).toBeInTheDocument()
+  })
+})
+
 describe('inbound log', () => {
   test('rows show outcome badges, the reason, and a dash when no ticket', async () => {
     const seen = recordSearches('/api/v1/email/inbound')

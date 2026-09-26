@@ -5,3 +5,4 @@
 .vars code { min-width: 12em; font-family: var(--font-mono); }
 .varHelp { color: var(--text-muted); }
 .footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

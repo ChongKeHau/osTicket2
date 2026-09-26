@@ -3,6 +3,8 @@ package attachment
 import (
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -25,27 +27,49 @@ func (h *Handler) Mount(private *gin.RouterGroup) {
 	private.GET("/files/:id", h.download)
 }
 
+// FormFile reads the multipart field "file" of an upload capped at maxBytes
+// (plus 1 MiB of multipart framing). On failure it has already written the
+// error response (413 when over the cap, 400 when the field is missing) and
+// returns ok false. The caller closes the returned file.
+func FormFile(c *gin.Context, maxBytes int64) (src multipart.File, fh *multipart.FileHeader, ok bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+1<<20)
+	fh, err := c.FormFile("file")
+	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			httpx.Fail(c, apperr.ErrPayloadTooLarge)
+			return nil, nil, false
+		}
+		httpx.Fail(c, apperr.Validation("file", "multipart field 'file' is required"))
+		return nil, nil, false
+	}
+	src, err = fh.Open()
+	if err != nil {
+		httpx.Fail(c, err)
+		return nil, nil, false
+	}
+	return src, fh, true
+}
+
+// ServeFile streams a stored file as a download with a sanitised filename.
+func ServeFile(c *gin.Context, meta *File, rc io.ReadCloser) {
+	defer rc.Close()
+	name := filepath.Base(strings.ReplaceAll(meta.Name, "\\", "/"))
+	name = strings.ReplaceAll(name, `"`, "")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.DataFromReader(http.StatusOK, meta.Size, meta.Mime, rc, map[string]string{
+		"Content-Disposition": fmt.Sprintf(`attachment; filename="%s"`, name),
+	})
+}
+
 func (h *Handler) upload(c *gin.Context) {
 	p, ok := auth.FromContext(c)
 	if !ok {
 		httpx.Fail(c, apperr.ErrUnauthorized)
 		return
 	}
-	// multipart framing overhead: allow 1 MiB beyond the file cap
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxBytes+1<<20)
-	fh, err := c.FormFile("file")
-	if err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
-			httpx.Fail(c, apperr.ErrPayloadTooLarge)
-			return
-		}
-		httpx.Fail(c, apperr.Validation("file", "multipart field 'file' is required"))
-		return
-	}
-	src, err := fh.Open()
-	if err != nil {
-		httpx.Fail(c, err)
+	src, fh, ok := FormFile(c, h.maxBytes)
+	if !ok {
 		return
 	}
 	defer src.Close()
@@ -73,11 +97,5 @@ func (h *Handler) download(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	defer rc.Close()
-	name := filepath.Base(strings.ReplaceAll(meta.Name, "\\", "/"))
-	name = strings.ReplaceAll(name, `"`, "")
-	c.Header("X-Content-Type-Options", "nosniff")
-	c.DataFromReader(http.StatusOK, meta.Size, meta.Mime, rc, map[string]string{
-		"Content-Disposition": fmt.Sprintf(`attachment; filename="%s"`, name),
-	})
+	ServeFile(c, meta, rc)
 }

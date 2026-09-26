@@ -66,6 +66,9 @@ type CreateInput struct {
 	// AutoSubmitted is set only by inbound mail processing (CreateExternal);
 	// it suppresses the autoresponder for tickets opened by inbound mail.
 	AutoSubmitted bool `json:"-"`
+	// UserID is set only by CreateExternal: the end user who owns the ticket.
+	// When nil, create resolves it from RequesterEmail.
+	UserID *int64 `json:"-"`
 }
 
 type UpdateInput struct {

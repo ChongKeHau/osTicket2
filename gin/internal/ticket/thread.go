@@ -60,11 +60,14 @@ type AttachmentRef struct {
 }
 
 type Entry struct {
-	ID          int64           `json:"id"`
-	TicketID    int64           `json:"ticket_id"`
-	Type        string          `json:"type"`
-	StaffID     *int64          `json:"staff_id"`
-	Poster      string          `json:"poster"`
+	ID       int64  `json:"id"`
+	TicketID int64  `json:"ticket_id"`
+	Type     string `json:"type"`
+	StaffID  *int64 `json:"staff_id"`
+	Poster   string `json:"poster"`
+	// UserID is the end user who wrote a customer message (portal or
+	// email), when known.
+	UserID      *int64          `json:"user_id"`
 	Title       *string         `json:"title"`
 	Body        string          `json:"body"`
 	Format      string          `json:"format"`
@@ -124,7 +127,7 @@ func (s *service) Reply(ctx context.Context, p auth.Principal, id int64, in Repl
 		}
 		eid := entry.ID
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "ticket_reply", TicketID: id, EntryID: &eid,
+			TemplateKey: "ticket_reply", TicketID: &id, EntryID: &eid,
 			To:   []mail.Recipient{{Name: fresh.RequesterName, Address: fresh.RequesterEmail}},
 			Vars: ticketVars(fresh, fullName(&st.FirstName, &st.LastName), in.Body, format),
 		}); err != nil {
@@ -274,7 +277,7 @@ func (s *service) Assign(ctx context.Context, p auth.Principal, id int64, staffI
 			return nil
 		}
 		return s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "assigned_alert", TicketID: id,
+			TemplateKey: "assigned_alert", TicketID: &id,
 			To:   []mail.Recipient{{Name: fullName(&st.FirstName, &st.LastName), Address: st.Email}},
 			Vars: ticketVars(row, fullName(&st.FirstName, &st.LastName), "", db.BodyFormatText),
 		})
@@ -361,6 +364,11 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		if err != nil {
 			return err
 		}
+		if in.UserID != nil {
+			if err := q.SetThreadEntryUser(ctx, db.SetThreadEntryUserParams{ID: entry.ID, UserID: in.UserID}); err != nil {
+				return err
+			}
+		}
 		if err := attachFiles(ctx, q, SystemPrincipal, entry.ID, in.FileIDs); err != nil {
 			return err
 		}
@@ -392,7 +400,7 @@ func (s *service) AppendMessage(ctx context.Context, ticketID int64, in MessageI
 		}
 		eid := entry.ID
 		if err := s.notifier.Enqueue(ctx, q, mail.Notification{
-			TemplateKey: "message_alert", TicketID: ticketID, EntryID: &eid, To: to,
+			TemplateKey: "message_alert", TicketID: &ticketID, EntryID: &eid, To: to,
 			Vars: ticketVars(row, "", in.Body, format),
 		}); err != nil {
 			return err
@@ -456,7 +464,12 @@ func applyStatus(ctx context.Context, q *db.Queries, p auth.Principal, row db.Ge
 	if err := q.SetTicketStatus(ctx, db.SetTicketStatusParams{ID: row.ID, StatusID: statusID, Close: doClose, Reopen: doReopen}); err != nil {
 		return err
 	}
-	return event(ctx, q, row.ID, &p.StaffID, kind, map[string]any{"from": row.StatusID, "to": statusID})
+	// SystemPrincipal has no staff row, so its changes record no staff_id.
+	var actor *int64
+	if p.StaffID != 0 {
+		actor = &p.StaffID
+	}
+	return event(ctx, q, row.ID, actor, kind, map[string]any{"from": row.StatusID, "to": statusID})
 }
 
 func attachFiles(ctx context.Context, q *db.Queries, p auth.Principal, entryID int64, fileIDs []int64) error {
@@ -504,7 +517,7 @@ func entryWithAttachments(ctx context.Context, q *db.Queries, r db.ThreadEntry) 
 
 func toEntry(r db.ThreadEntry) Entry {
 	return Entry{
-		ID: r.ID, TicketID: r.TicketID, Type: string(r.Type), StaffID: r.StaffID, Poster: r.Poster,
+		ID: r.ID, TicketID: r.TicketID, Type: string(r.Type), StaffID: r.StaffID, Poster: r.Poster, UserID: r.UserID,
 		Title: r.Title, Body: r.Body, Format: string(r.Format), ParentID: r.ParentID,
 		Attachments: []AttachmentRef{}, CreatedAt: r.CreatedAt.UTC(),
 	}

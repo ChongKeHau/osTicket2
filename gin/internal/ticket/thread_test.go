@@ -1,7 +1,10 @@
 package ticket
 
 import (
+	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/grandpine/ticket-api/internal/apperr"
@@ -114,6 +117,33 @@ func TestThreadCursor(t *testing.T) {
 	}
 	if _, err := f.svc.Thread(f.ctx, f.other, tk.ID, 0, 10); !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("invisible thread: %v", err)
+	}
+}
+
+func TestThreadEntryUserID(t *testing.T) {
+	f := newFixture(t)
+	tk := f.create(t, f.agent, "Q", f.support.ID)
+	u, err := f.q.CreateEndUser(f.ctx, db.CreateEndUserParams{Email: "cust@example.test", Name: "Cust Omer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.AppendMessage(f.ctx, tk.ID, MessageInput{Poster: "Cust Omer", Body: "from the portal", Format: "text", UserID: &u.ID}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.svc.Thread(f.ctx, f.agent, tk.ID, 0, 10)
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("thread: %+v %v", page, err)
+	}
+	if page.Items[0].UserID != nil {
+		t.Fatalf("staff-opened message user_id = %v", *page.Items[0].UserID)
+	}
+	got := page.Items[1]
+	if got.UserID == nil || *got.UserID != u.ID || got.Poster != "Cust Omer" {
+		t.Fatalf("customer entry = %+v", got)
+	}
+	b, _ := json.Marshal(page.Items)
+	if !strings.Contains(string(b), `"user_id":null`) || !strings.Contains(string(b), `"user_id":`+strconv.FormatInt(u.ID, 10)) {
+		t.Fatalf("json = %s", b)
 	}
 }
 

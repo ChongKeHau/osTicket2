@@ -67,7 +67,7 @@ func TestFlywayMigrateTwice(t *testing.T) {
 	}
 
 	first := runFlyway()
-	if !strings.Contains(first, "Successfully applied 4 migrations") {
+	if !strings.Contains(first, "Successfully applied 5 migrations") {
 		t.Fatalf("first run:\n%s", first)
 	}
 	second := runFlyway()
@@ -88,15 +88,15 @@ func TestFlywayMigrateTwice(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM flyway_schema_history WHERE success`).Scan(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied != 4 {
-		t.Fatalf("expected 4 successful migrations in history, got %d", applied)
+	if applied != 5 {
+		t.Fatalf("expected 5 successful migrations in history, got %d", applied)
 	}
 	var tables int
-	if err := conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('ticket','staff','department','thread_entry','file','attachment')`).Scan(&tables); err != nil {
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('ticket','staff','department','thread_entry','file','attachment','end_user')`).Scan(&tables); err != nil {
 		t.Fatal(err)
 	}
-	if tables != 6 {
-		t.Fatalf("expected 6 core tables, got %d", tables)
+	if tables != 7 {
+		t.Fatalf("expected 7 core tables, got %d", tables)
 	}
 	var idx string
 	if err := conn.QueryRow(ctx, `SELECT indexdef FROM pg_indexes WHERE tablename = 'ticket_event' AND indexname = 'ticket_event_created_idx'`).Scan(&idx); err != nil {
@@ -104,5 +104,12 @@ func TestFlywayMigrateTwice(t *testing.T) {
 	}
 	if !strings.Contains(idx, "(created_at)") {
 		t.Fatalf("ticket_event_created_idx should cover created_at, got %s", idx)
+	}
+	var endUserIdx string
+	if err := conn.QueryRow(ctx, `SELECT indexdef FROM pg_indexes WHERE tablename = 'end_user' AND indexname = 'end_user_email_idx'`).Scan(&endUserIdx); err != nil {
+		t.Fatalf("end_user_email_idx: %v", err)
+	}
+	if !strings.Contains(endUserIdx, "lower(email)") {
+		t.Fatalf("end_user_email_idx should cover lower(email), got %s", endUserIdx)
 	}
 }

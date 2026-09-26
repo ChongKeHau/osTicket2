@@ -23,12 +23,24 @@ type File struct {
 	Name string `json:"name"`
 	Mime string `json:"mime"`
 	Size int64  `json:"size"`
+	// Token is set only for portal uploads: the uploader must present it
+	// with the file id to attach the file to a ticket.
+	Token string `json:"token,omitempty"`
 }
 
 type Service interface {
 	Upload(ctx context.Context, p auth.Principal, name, mime string, r io.Reader) (*File, error)
 	Download(ctx context.Context, p auth.Principal, id int64) (*File, io.ReadCloser, error)
 	GC(ctx context.Context, olderThan time.Duration) (int, error)
+
+	// UploadAnonymous stores a file with no staff uploader (uploaded_by NULL):
+	// portal uploads, which become owned by the ticket they are attached to.
+	UploadAnonymous(ctx context.Context, name, mime string, r io.Reader) (*File, error)
+	// DownloadForTicket opens a file only when it is attached to a
+	// customer-visible entry (message or response, never a note) of ticketID;
+	// anything else is ErrNotFound. The caller has already checked that the
+	// requester may see the ticket.
+	DownloadForTicket(ctx context.Context, ticketID, fileID int64) (*File, io.ReadCloser, error)
 }
 
 type service struct {
@@ -47,6 +59,21 @@ func NewService(b db.Beginner, store Storage, maxBytes int64, allowedMIME []stri
 }
 
 func (s *service) Upload(ctx context.Context, p auth.Principal, name, mime string, r io.Reader) (*File, error) {
+	uploader := p.StaffID
+	return s.upload(ctx, &uploader, nil, name, mime, r)
+}
+
+// UploadAnonymous also generates the file's access token (32 random bytes, hex).
+func (s *service) UploadAnonymous(ctx context.Context, name, mime string, r io.Reader) (*File, error) {
+	var tb [32]byte
+	if _, err := rand.Read(tb[:]); err != nil {
+		return nil, err
+	}
+	token := hex.EncodeToString(tb[:])
+	return s.upload(ctx, nil, &token, name, mime, r)
+}
+
+func (s *service) upload(ctx context.Context, uploader *int64, token *string, name, mime string, r io.Reader) (*File, error) {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	if name == "" || name == "." || name == "/" || name == ".." {
 		return nil, apperr.Validation("file", "filename is required")
@@ -85,15 +112,18 @@ func (s *service) Upload(ctx context.Context, p auth.Principal, name, mime strin
 		_ = s.store.Delete(ctx, key)
 		return nil, fmt.Errorf("%w: file exceeds %d bytes", apperr.ErrPayloadTooLarge, s.maxBytes)
 	}
-	uploader := p.StaffID
 	row, err := db.New(s.db).CreateFile(ctx, db.CreateFileParams{
-		Key: key, Name: name, Mime: mime, Size: size, Sha256: sum, Backend: "local", UploadedBy: &uploader,
+		Key: key, Name: name, Mime: mime, Size: size, Sha256: sum, Backend: "local", UploadedBy: uploader, AccessToken: token,
 	})
 	if err != nil {
 		_ = s.store.Delete(ctx, key)
 		return nil, err
 	}
-	return &File{ID: row.ID, Name: row.Name, Mime: row.Mime, Size: row.Size}, nil
+	out := &File{ID: row.ID, Name: row.Name, Mime: row.Mime, Size: row.Size}
+	if token != nil {
+		out.Token = *token
+	}
+	return out, nil
 }
 
 func (s *service) Download(ctx context.Context, p auth.Principal, id int64) (*File, io.ReadCloser, error) {
@@ -119,6 +149,29 @@ func (s *service) Download(ctx context.Context, p auth.Principal, id int64) (*Fi
 			return nil, nil, fmt.Errorf("file %d: %w", id, apperr.ErrNotFound)
 		}
 	}
+	return s.open(ctx, row)
+}
+
+func (s *service) DownloadForTicket(ctx context.Context, ticketID, fileID int64) (*File, io.ReadCloser, error) {
+	q := db.New(s.db)
+	ok, err := q.FileOnCustomerEntry(ctx, db.FileOnCustomerEntryParams{FileID: fileID, TicketID: ticketID})
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("file %d: %w", fileID, apperr.ErrNotFound)
+	}
+	row, err := q.GetFile(ctx, fileID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, fmt.Errorf("file %d: %w", fileID, apperr.ErrNotFound)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.open(ctx, row)
+}
+
+func (s *service) open(ctx context.Context, row db.File) (*File, io.ReadCloser, error) {
 	rc, err := s.store.Open(ctx, row.Key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open blob %s: %w", row.Key, err)

@@ -55,7 +55,7 @@ func (q *Queries) ListAttachmentsForEntries(ctx context.Context, entryIds []int6
 }
 
 const listThreadEntries = `-- name: ListThreadEntries :many
-SELECT id, ticket_id, type, staff_id, poster, title, body, format, parent_id, created_at, updated_at FROM thread_entry
+SELECT id, ticket_id, type, staff_id, poster, title, body, format, parent_id, created_at, updated_at, user_id FROM thread_entry
 WHERE ticket_id = $1 AND id > $2
 ORDER BY id
 LIMIT $3::int
@@ -88,6 +88,7 @@ func (q *Queries) ListThreadEntries(ctx context.Context, arg ListThreadEntriesPa
 			&i.ParentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
