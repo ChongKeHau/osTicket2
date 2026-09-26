@@ -115,8 +115,8 @@ func serve(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	ctokens := client.NewTokens(cfg.JWTSecret, accessTTL)
 	ident := client.NewService(pool, ctokens, refreshTTL, notifier, cfg.AppBaseURL, cfg.Mail.SiteName)
 	portalSvc := client.NewPortalService(pool, notifier, fileSvc, ident, client.NewLimiter(10, time.Hour), cfg.Mail.SiteName)
-	// Auth requests: 10 a minute; anonymous uploads get their own hourly budget,
-	// separate from the anonymous-open budget above.
+	// Auth requests: 10 a minute; portal uploads (signed in or not) get their own
+	// hourly per-IP budget, separate from the ticket-open budget above.
 	portalH := client.NewHandler(ident, client.NewLimiter(10, time.Minute), portalSvc, client.NewLimiter(10, time.Hour), cfg.MaxUploadBytes)
 
 	engine := server.New(server.Options{

@@ -152,8 +152,9 @@ versa), 15-minute access tokens, rotating refresh tokens stored hashed in
 | `GET tickets?state=&page=&page_size=` | account | own tickets; guests get 403 `guest_session` |
 
 Rate limits (fixed window, 429 with `retry_after`): sign-in, link, reset, access and register
-share 10 a minute per email and per IP; anonymous ticket opens 10 an hour per email and per
-IP; anonymous uploads 10 an hour per IP.
+share 10 a minute per email and per IP; ticket opens 10 an hour per email (the session's
+address when signed in) and per IP; uploads 10 an hour per IP. A session (account or guest)
+does not lift the open or upload budgets.
 
 Migration `V5__portal.sql` adds `end_user`, `client_token`, `client_refresh_token`,
 `ticket.user_id`, `thread_entry.user_id` (staff thread entries expose it as `user_id`),

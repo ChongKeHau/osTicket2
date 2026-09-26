@@ -54,7 +54,7 @@ type Handler struct {
 
 // NewHandler builds the handler. limiter budgets login, link, reset, access
 // and register requests per address and per client IP; portal serves the
-// ticket routes; uploadLimit budgets anonymous uploads per client IP (only
+// ticket routes; uploadLimit budgets every upload per client IP (only
 // its IP side is used); maxBytes caps one upload, as for staff uploads.
 func NewHandler(svc IdentityService, limiter *Limiter, portal Portal, uploadLimit *Limiter, maxBytes int64) *Handler {
 	return &Handler{svc: svc, limiter: limiter, portal: portal, uploadLimit: uploadLimit, maxBytes: maxBytes}
@@ -328,14 +328,12 @@ func (h *Handler) openTicket(c *gin.Context) {
 	c.JSON(http.StatusCreated, out)
 }
 
-// upload takes the same multipart form as the staff upload. Anonymous callers
-// are budgeted per IP before the body is read.
+// upload takes the same multipart form as the staff upload. Every caller,
+// signed in or not, is budgeted per IP before the body is read.
 func (h *Handler) upload(c *gin.Context) {
-	if _, ok := FromContext(c); !ok {
-		if err := h.uploadLimit.CheckIP(c.ClientIP()); err != nil {
-			httpx.Fail(c, err)
-			return
-		}
+	if err := h.uploadLimit.CheckIP(c.ClientIP()); err != nil {
+		httpx.Fail(c, err)
+		return
 	}
 	src, fh, ok := attachment.FormFile(c, h.maxBytes)
 	if !ok {

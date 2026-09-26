@@ -137,21 +137,21 @@ func (s *PortalService) Reference(ctx context.Context) (*Reference, error) {
 }
 
 // OpenTicket opens a ticket for the session's user (p non-nil) or, anonymously,
-// for the address in the body, creating the end user if needed. Anonymous
-// callers are rate-limited per address and per IP.
+// for the address in the body, creating the end user if needed. Every open is
+// rate-limited per address (the session's, when signed in) and per IP, so a
+// session does not lift the budget.
 func (s *PortalService) OpenTicket(ctx context.Context, p *Principal, ip string, in OpenInput) (*Opened, error) {
 	email, name := strings.TrimSpace(in.Email), strings.TrimSpace(in.Name)
 	// The portal form sends 0 for "no choice" (its select's empty option).
 	in.DeptID, in.TopicID = nonZero(in.DeptID), nonZero(in.TopicID)
 	if p != nil {
 		email = p.Email
-	} else {
-		if email == "" {
-			return nil, apperr.Validation("email", "required")
-		}
-		if err := s.openLimit.Check(email, ip); err != nil {
-			return nil, err
-		}
+	}
+	if email == "" {
+		return nil, apperr.Validation("email", "required")
+	}
+	if err := s.openLimit.Check(email, ip); err != nil {
+		return nil, err
 	}
 	var out *Opened
 	err := db.WithTx(ctx, s.b, func(q *db.Queries) error {

@@ -303,10 +303,10 @@ func TestPortalAttachRequiresFileToken(t *testing.T) {
 }
 
 func TestOpenTicketSignedInUsesSessionEmail(t *testing.T) {
-	f := newPortal(t, 1)
+	f := newPortal(t, 100)
 	f.open(t, "sam@x.test", "First")
 	p := f.principal(t, "sam@x.test")
-	// The body's address is ignored, and signed-in callers are not rate-limited.
+	// The body's address is ignored (TestSignedInOpenRateLimited covers the budget).
 	for i := 0; i < 3; i++ {
 		out, err := f.svc.OpenTicket(f.ctx, &p, "198.51.100.7", OpenInput{Email: "mallory@x.test", Subject: "Mine", Message: "m", DeptID: &f.dept.ID})
 		if err != nil {
@@ -693,6 +693,42 @@ func TestDownloadChecksTicket(t *testing.T) {
 	}
 	if _, _, err := f.svc.Download(f.ctx, ann, a.ID, noteFile.ID); !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("note attachment: %v", err)
+	}
+}
+
+// A session is budgeted like anyone else: per session email and per IP.
+func TestSignedInOpenRateLimited(t *testing.T) {
+	f := newPortal(t, 2)
+	f.open(t, "ann@x.test", "First")
+	ann := f.principal(t, "ann@x.test")
+	tid := int64(0)
+	guest := ann
+	guest.TicketID = &tid
+	in := OpenInput{Subject: "S", Message: "m", DeptID: &f.dept.ID}
+	// "First" spent one of ann's two; the account session spends the other.
+	if _, err := f.svc.OpenTicket(f.ctx, &ann, "198.51.100.1", in); err != nil {
+		t.Fatal(err)
+	}
+	var rl *apperr.RateLimitedError
+	for _, p := range []Principal{ann, guest} {
+		if _, err := f.svc.OpenTicket(f.ctx, &p, "198.51.100.2", in); !errors.As(err, &rl) || rl.RetryAfter <= 0 {
+			t.Fatalf("session over its email budget: %v", err)
+		}
+	}
+	// The IP budget applies to sessions too: carol's address has budget left
+	// after her first open, but 198.51.100.1 (ann's open, then carol's) does not.
+	if _, err := f.ident.UpsertByEmail(f.ctx, f.q, "carol@x.test", "Carol"); err != nil {
+		t.Fatal(err)
+	}
+	carol := f.principal(t, "carol@x.test")
+	if _, err := f.svc.OpenTicket(f.ctx, &carol, "198.51.100.1", in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.OpenTicket(f.ctx, &carol, "198.51.100.1", in); !errors.As(err, &rl) {
+		t.Fatalf("session over the IP budget: %v", err)
+	}
+	if n := f.int(t, `SELECT count(*) FROM ticket WHERE requester_email = 'ann@x.test'`); n != 2 {
+		t.Fatalf("ann tickets %d", n)
 	}
 }
 

@@ -504,8 +504,21 @@ func TestPortalHandlerUpload(t *testing.T) {
 	if w.Code != 429 || decodeErr(t, w).Error.Fields["retry_after"] == "" {
 		t.Fatalf("second anonymous upload: %d %s", w.Code, w.Body.String())
 	}
-	// Signed-in uploads are not budgeted.
+	// A session does not lift the per-IP budget: signed-in and guest uploads
+	// from the same IP are refused too.
 	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	tid := int64(9)
+	guest, _, _ := h.tokens.IssueAccess(5, &tid, false)
+	for _, tok := range []string{user, guest} {
+		if w := h.upload(t, tok, "file", "mine"); w.Code != 429 || decodeErr(t, w).Error.Fields["retry_after"] == "" {
+			t.Fatalf("session upload over budget: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if len(h.portal.uploads) != 1 {
+		t.Fatalf("uploads %v", h.portal.uploads)
+	}
+
+	h = newHarness(100)
 	for i := 0; i < 2; i++ {
 		if w := h.upload(t, user, "file", "mine"); w.Code != 201 {
 			t.Fatalf("signed-in upload %d: %d %s", i, w.Code, w.Body.String())
@@ -517,8 +530,23 @@ func TestPortalHandlerUpload(t *testing.T) {
 	if w := h.upload(t, user, "file", strings.Repeat("x", 2<<20)); w.Code != 413 {
 		t.Fatalf("oversize: %d", w.Code)
 	}
-	if strings.Join(h.portal.uploads, ",") != "note.txt|text/plain,note.txt|text/plain,note.txt|text/plain" {
+	if strings.Join(h.portal.uploads, ",") != "note.txt|text/plain,note.txt|text/plain" {
 		t.Fatalf("uploads %v", h.portal.uploads)
+	}
+}
+
+// A signed-in session that has spent the IP's upload budget gets 429 like an
+// anonymous caller.
+func TestPortalHandlerSignedInUploadRateLimited(t *testing.T) {
+	h := newHarness(2)
+	user, _, _ := h.tokens.IssueAccess(5, nil, false)
+	for i := 0; i < 2; i++ {
+		if w := h.upload(t, user, "file", "mine"); w.Code != 201 {
+			t.Fatalf("upload %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+	if w := h.upload(t, user, "file", "one too many"); w.Code != 429 {
+		t.Fatalf("third upload: %d %s", w.Code, w.Body.String())
 	}
 }
 
