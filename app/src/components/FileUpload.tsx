@@ -1,10 +1,14 @@
 import { useEffect, useRef, type ChangeEvent } from 'react'
 import { ApiError } from '../api/client'
 import { uploadFile } from '../api/files'
+import type { FileInfo } from '../api/types'
 
 export interface PendingFile { key: string; name: string; status: 'uploading' | 'done' | 'error'; fileId?: number; error?: string }
 
-export function FileUpload({ pending, onChange, inputId }: { pending: PendingFile[]; onChange: (next: PendingFile[]) => void; inputId: string }) {
+/** `upload` defaults to the staff upload; the portal passes `uploadPortalFile`. */
+export function FileUpload({ pending, onChange, inputId, upload = uploadFile }: {
+  pending: PendingFile[]; onChange: (next: PendingFile[]) => void; inputId: string; upload?: (file: File) => Promise<FileInfo>
+}) {
   const ref = useRef<PendingFile[]>(pending)
   useEffect(() => { ref.current = pending }, [pending])
 
@@ -30,7 +34,7 @@ export function FileUpload({ pending, onChange, inputId }: { pending: PendingFil
       ref.current = next
       onChange(next)
       try {
-        const info = await uploadFile(file)
+        const info = await upload(file)
         update(key, { status: 'done', fileId: info.id })
       } catch (err) {
         const msg = err instanceof ApiError ? (err.fields.file ?? err.message) : 'upload failed'

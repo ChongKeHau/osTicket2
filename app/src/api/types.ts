@@ -81,3 +81,28 @@ export interface DashboardStats {
   start: string; period: number; series: DashboardPoint[]
   by_department: DashboardRow[]; by_topic: DashboardRow[]; by_staff: DashboardRow[]
 }
+
+// Customer portal (`/api/v1/portal`).
+export interface PortalProfile { id: number; email: string; name: string; verified: boolean; has_password: boolean }
+/** What an emailed token was issued for; only token exchanges carry it, and the page routes by it. */
+export type PortalTokenKind = 'confirm' | 'signin' | 'access' | 'reset'
+export interface PortalSession {
+  access_token: string; refresh_token: string; expires_in: number; user: PortalProfile
+  /** Set for a guest session scoped to one ticket; null for a full account session. */
+  ticket_id: number | null
+  kind?: PortalTokenKind
+}
+export interface PortalReference { site_name: string; departments: Ref[]; topics: Ref[] }
+export interface OpenTicketInput {
+  name: string; email: string; subject: string; message: string; format: 'text' | 'html'
+  topic_id?: number; dept_id?: number; file_ids?: number[]
+}
+export interface PortalTicketRow {
+  id: number; number: string; subject: string; status: Ref; state: TicketState; department: string
+  created_at: string; last_message_at: string; closed_at: string | null
+}
+export interface PortalEntry {
+  id: number; type: 'message' | 'response'; poster: string; body: string; format: 'html' | 'text'
+  created_at: string; attachments: AttachmentRef[]
+}
+export interface PortalTicket extends PortalTicketRow { topic: string | null; updated_at: string; entries: PortalEntry[] }
