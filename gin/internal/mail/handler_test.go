@@ -44,7 +44,7 @@ func TestTemplatesListAndPatch(t *testing.T) {
 		Items []map[string]any `json:"items"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
-	if len(list.Items) != 4 || list.Items[0]["key"] != "assigned_alert" {
+	if len(list.Items) != 8 || list.Items[0]["key"] != "assigned_alert" {
 		t.Fatalf("items = %v", list.Items)
 	}
 	w = do(e, http.MethodPatch, "/api/v1/email/templates/ticket_reply", `{"subject":"New {{.Number}}"}`)

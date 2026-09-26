@@ -87,7 +87,7 @@ func (n *DBNotifier) Enqueue(ctx context.Context, q *db.Queries, nt Notification
 			continue
 		}
 		var inReplyTo *string
-		prev, err := q.LastSentMessageID(ctx, db.LastSentMessageIDParams{TicketID: nt.TicketID, ToAddress: to.Address})
+		prev, err := q.LastSentMessageID(ctx, db.LastSentMessageIDParams{TicketID: &nt.TicketID, ToAddress: to.Address})
 		switch {
 		case err == nil:
 			inReplyTo = &prev
@@ -100,7 +100,7 @@ func (n *DBNotifier) Enqueue(ctx context.Context, q *db.Queries, nt Notification
 			return err
 		}
 		if _, err := q.CreateOutbox(ctx, db.CreateOutboxParams{
-			TicketID: nt.TicketID, EntryID: nt.EntryID, TemplateKey: nt.TemplateKey,
+			TicketID: &nt.TicketID, EntryID: nt.EntryID, TemplateKey: nt.TemplateKey,
 			ToAddress: to.Address, ToName: to.Name, Subject: rendered.Subject,
 			BodyHtml: rendered.HTML, BodyText: rendered.Text, MessageID: mid, InReplyTo: inReplyTo,
 			AutoSubmitted: nt.AutoSubmitted,

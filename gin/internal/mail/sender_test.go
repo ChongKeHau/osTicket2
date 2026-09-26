@@ -105,7 +105,7 @@ func (f *flakyTransport) Close() error { return nil }
 func queueOne(t *testing.T, q *db.Queries, tid int64, to string) int64 {
 	t.Helper()
 	mid, _ := NewMessageID(tid, "example.test")
-	id, err := q.CreateOutbox(context.Background(), db.CreateOutboxParams{TicketID: tid, TemplateKey: "ticket_reply", ToAddress: to, Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
+	id, err := q.CreateOutbox(context.Background(), db.CreateOutboxParams{TicketID: &tid, TemplateKey: "ticket_reply", ToAddress: to, Subject: "s", BodyHtml: "<p>h</p>", BodyText: "t", MessageID: mid})
 	if err != nil {
 		t.Fatal(err)
 	}

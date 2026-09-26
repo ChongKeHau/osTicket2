@@ -53,7 +53,7 @@ func (q *Queries) CountTickets(ctx context.Context, arg CountTicketsParams) (int
 const createThreadEntry = `-- name: CreateThreadEntry :one
 INSERT INTO thread_entry (ticket_id, type, staff_id, poster, title, body, format, parent_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, ticket_id, type, staff_id, poster, title, body, format, parent_id, created_at, updated_at
+RETURNING id, ticket_id, type, staff_id, poster, title, body, format, parent_id, created_at, updated_at, user_id
 `
 
 type CreateThreadEntryParams struct {
@@ -91,6 +91,7 @@ func (q *Queries) CreateThreadEntry(ctx context.Context, arg CreateThreadEntryPa
 		&i.ParentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UserID,
 	)
 	return i, err
 }

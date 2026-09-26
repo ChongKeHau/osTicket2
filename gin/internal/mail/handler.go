@@ -163,7 +163,10 @@ func (h *Handler) listOutbox(c *gin.Context) {
 	}
 	items := make([]outboxJSON, 0, len(rows))
 	for _, r := range rows {
-		j := outboxJSON{ID: r.ID, TicketID: r.TicketID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+		j := outboxJSON{ID: r.ID, EntryID: r.EntryID, TemplateKey: r.TemplateKey, ToAddress: r.ToAddress, ToName: r.ToName, Subject: r.Subject, Status: string(r.Status), Attempts: r.Attempts, LastError: r.LastError, NextAttempt: r.NextAttemptAt.UTC().Format("2006-01-02T15:04:05Z07:00"), CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+		if r.TicketID != nil {
+			j.TicketID = *r.TicketID
+		}
 		if r.SentAt != nil {
 			s := r.SentAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 			j.SentAt = &s
