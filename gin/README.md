@@ -160,7 +160,9 @@ Migration `V5__portal.sql` adds `end_user`, `client_token`, `client_refresh_toke
 `file.access_token`, the four `client_*` email templates, and makes
 `email_outbox.ticket_id` nullable (account mail belongs to no ticket). It backfills one end
 user per distinct requester address (named from that address's latest ticket) and links
-existing tickets to them.
+existing tickets to them. From then on every new ticket (staff, API, inbound mail or portal)
+is linked to the end user for its `requester_email` (matched case-insensitively, created when
+missing), and a staff edit of `requester_email` moves the ticket to the new address's end user.
 
 ## Dashboard
 

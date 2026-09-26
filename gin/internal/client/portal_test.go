@@ -378,6 +378,69 @@ func TestListTicketsOwnOnly(t *testing.T) {
 	}
 }
 
+// Tickets opened by mail or by staff, and tickets whose requester an agent
+// changes, show up in (and leave) the right customer's portal list.
+func TestListTicketsIncludesMailAndStaffTickets(t *testing.T) {
+	f := newPortal(t, 100)
+	f.open(t, "ann@x.test", "Portal")
+	byMail, err := f.tickets.CreateExternal(f.ctx, ticket.ExternalCreateInput{
+		Subject: "Mail", Body: "b", Format: "text", RequesterName: "Ann", RequesterEmail: "ANN@x.test", DeptID: f.dept.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byStaff, err := f.tickets.Create(f.ctx, f.staff, ticket.CreateInput{
+		Subject: "Staff", Message: "m", RequesterName: "Ann", RequesterEmail: "ann@x.test", DeptID: &f.dept.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := f.tickets.Create(f.ctx, f.staff, ticket.CreateInput{
+		Subject: "Moved", Message: "m", RequesterName: "Bob", RequesterEmail: "bob@x.test", DeptID: &f.dept.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ann := f.principal(t, "ann@x.test")
+	bob := f.principal(t, "bob@x.test")
+	subjects := func(p Principal) map[string]bool {
+		t.Helper()
+		l, err := f.svc.ListTickets(f.ctx, p, "", httpx.Page{Page: 1, PageSize: 25})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for _, r := range l.Items {
+			got[r.Subject] = true
+		}
+		return got
+	}
+	if got := subjects(ann); len(got) != 3 || !got["Portal"] || !got["Mail"] || !got["Staff"] {
+		t.Fatalf("ann before move %v", got)
+	}
+	if got := subjects(bob); len(got) != 1 || !got["Moved"] {
+		t.Fatalf("bob before move %v", got)
+	}
+	email := "ann@x.test"
+	if _, err := f.tickets.Update(f.ctx, f.staff, moved.ID, ticket.UpdateInput{RequesterEmail: &email}); err != nil {
+		t.Fatal(err)
+	}
+	if got := subjects(ann); len(got) != 4 || !got["Moved"] {
+		t.Fatalf("ann after move %v", got)
+	}
+	if got := subjects(bob); len(got) != 0 {
+		t.Fatalf("bob after move %v", got)
+	}
+	if _, err := f.svc.GetTicket(f.ctx, bob, moved.ID); !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("old requester still reads the ticket: %v", err)
+	}
+	for _, id := range []int64{byMail.ID, byStaff.ID, moved.ID} {
+		if _, err := f.svc.GetTicket(f.ctx, ann, id); err != nil {
+			t.Fatalf("ann get %d: %v", id, err)
+		}
+	}
+}
+
 func TestGuestCannotListTickets(t *testing.T) {
 	f := newPortal(t, 100)
 	a := f.open(t, "ann@x.test", "A1")

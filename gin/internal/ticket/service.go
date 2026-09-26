@@ -203,8 +203,17 @@ func (s *service) create(ctx context.Context, p auth.Principal, in CreateInput, 
 		if err != nil {
 			return err
 		}
-		if in.UserID != nil {
-			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: in.UserID}); err != nil {
+		// Every ticket belongs to its requester's end user (spec §2), so the
+		// requester sees it in the portal however it was opened. The portal
+		// passes the user it already resolved; otherwise resolve it here.
+		owner := in.UserID
+		if owner == nil {
+			if owner, err = resolveEndUser(ctx, q, in.RequesterEmail, in.RequesterName); err != nil {
+				return err
+			}
+		}
+		if owner != nil {
+			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: owner}); err != nil {
 				return err
 			}
 		}
@@ -348,7 +357,8 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 		if err := q.LockTicket(ctx, id); err != nil {
 			return err
 		}
-		if _, err := loadVisible(ctx, q, p, id); err != nil {
+		before, err := loadVisible(ctx, q, p, id)
+		if err != nil {
 			return err
 		}
 		fields := map[string]string{}
@@ -380,10 +390,25 @@ func (s *service) Update(ctx context.Context, p auth.Principal, id int64, in Upd
 		}); err != nil {
 			return err
 		}
+		// A new requester address moves the ticket to that address's end user,
+		// so the previous requester's portal sessions lose it and the new one's
+		// gain it. The new user is named only when the update names them.
+		if in.RequesterEmail != nil && !strings.EqualFold(strings.TrimSpace(*in.RequesterEmail), before.RequesterEmail) {
+			name := ""
+			if in.RequesterName != nil {
+				name = *in.RequesterName
+			}
+			owner, err := resolveEndUser(ctx, q, *in.RequesterEmail, name)
+			if err != nil {
+				return err
+			}
+			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: owner}); err != nil {
+				return err
+			}
+		}
 		if err := event(ctx, q, id, &p.StaffID, db.TicketEventKindEdited, map[string]any{"fields": changedFields(in)}); err != nil {
 			return err
 		}
-		var err error
 		out, err = get(ctx, q, p, id)
 		return err
 	})
