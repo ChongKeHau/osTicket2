@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { exchange } from '../../api/portal'
+import { portal } from '../../api/portalClient'
 import type { PortalSession } from '../../api/types'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import { ApiError } from '../../api/sessionStore'
@@ -35,6 +36,14 @@ export function TokenPage() {
     started.current = true
     exchange(token).then(
       (session) => {
+        // A guest session is scoped to one ticket; without it there is nothing to show, so drop it
+        // rather than adopt it (it would leave a signed-in guest who can reach no page).
+        if (session.kind === 'access' && session.ticket_id == null) {
+          portal.tokens.clear() // exchange() already stored it
+          flash('error', 'This link did not include a ticket. Please request a new one.')
+          navigate('/portal', { replace: true })
+          return
+        }
         adopt(session)
         if (session.kind === 'confirm') flash('notice', 'Email confirmed — set your password')
         navigate(destination(session), { replace: true })

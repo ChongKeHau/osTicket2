@@ -64,11 +64,8 @@ export const portalHandlers = [
     if (s) return HttpResponse.json(s)
     return HttpResponse.json({ error: { code: 'token_invalid', message: 'this link is invalid or has expired' } }, { status: 410 })
   }),
-  http.post(`${P}/auth/register`, async ({ request }) => {
-    const body = (await request.json()) as { email: string; name: string }
-    if (body.email === profile.email) return HttpResponse.json({ error: { code: 'conflict', message: 'email already registered' } }, { status: 409 })
-    return HttpResponse.json({}, { status: 201 })
-  }),
+  // Always 201 {}, whether or not the address exists (no account enumeration).
+  http.post(`${P}/auth/register`, () => HttpResponse.json({}, { status: 201 })),
   http.post(`${P}/auth/refresh`, async ({ request }) => {
     const { refresh_token: rt } = (await request.json()) as { refresh_token: string }
     if (rt.startsWith('prefresh-guest')) return HttpResponse.json({ ...guestSession, access_token: 'paccess-guest-2', refresh_token: 'prefresh-guest-2' })

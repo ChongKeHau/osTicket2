@@ -1,8 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import { register } from '../../api/portal'
-import { ApiError } from '../../api/sessionStore'
 import { splitErrors } from '../../lib/forms'
 import { Banner, errorMessage } from '../../ui/Banner'
 import { FormActions } from '../../ui/FormActions'
@@ -11,7 +9,11 @@ import { CheckEmailPage } from './CheckEmailPage'
 
 const KNOWN = ['name', 'email']
 
-/** Name and email only: the emailed confirm link lands on the profile page to set a password. */
+/**
+ * Name and email only: the emailed confirm link lands on the profile page to set a password.
+ * The API answers 201 whether or not the address already has an account, so every success
+ * shows the same confirmation.
+ */
 export function RegisterPage() {
   const [form, setForm] = useState({ name: '', email: '' })
   const m = useMutation({ mutationFn: register })
@@ -23,8 +25,7 @@ export function RegisterPage() {
     )
   }
 
-  const conflict = m.error instanceof ApiError && m.error.status === 409
-  const { fields, banner } = splitErrors(conflict ? null : m.error, KNOWN)
+  const { fields, banner } = splitErrors(m.error, KNOWN)
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -34,11 +35,6 @@ export function RegisterPage() {
   return (
     <form onSubmit={onSubmit}>
       <h2>Create an Account</h2>
-      {conflict && (
-        <Banner level="error">
-          An account with that email already exists. <Link to="/portal/login">Sign in</Link>
-        </Banner>
-      )}
       {banner ? <Banner level="error">{errorMessage(banner)}</Banner> : null}
       <FormTable sections={[{ title: 'Your Information', rows: [
         { id: 'name', label: 'Name', required: true, error: fields.name,

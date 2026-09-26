@@ -41,11 +41,12 @@ it('posts { email, name } and shows the confirm-your-email page', async () => {
   await waitFor(() => expect(body).toEqual({ email: 'jamie@example.test', name: 'Jamie Customer' }))
 })
 
-it('a 409 says the account exists and links to sign in', async () => {
+it('shows the same confirmation for an address that already has an account', async () => {
+  // The API answers 201 {} either way, so the page cannot (and must not) tell.
   mount()
   await fill('Pat Customer', 'pat@example.test')
-  expect(await screen.findByText(/An account with that email already exists/)).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/portal/login')
+  expect(await screen.findByText('Check your email to confirm your account')).toBeInTheDocument()
+  expect(screen.queryByText(/already exists/i)).not.toBeInTheDocument()
 })
 
 it('a 400 with fields.email shows the error under Email', async () => {

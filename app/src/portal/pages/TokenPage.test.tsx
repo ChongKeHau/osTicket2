@@ -1,9 +1,11 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { portal } from '../../api/portalClient'
+import { PORTAL_REFRESH_KEY, portal } from '../../api/portalClient'
+import { portalFixtures } from '../../test/portal'
 import { makeQueryClient } from '../../test/render'
 import { server } from '../../test/setup'
 import { PortalAuthProvider, usePortalAuth } from '../PortalAuthContext'
@@ -62,6 +64,16 @@ it('good-signin: exchanges once under StrictMode, adopts the session, goes to th
 it('good-access: adopts a guest session and goes to its ticket', async () => {
   mount('good-access')
   expect(await screen.findByRole('heading', { name: 'ticket /portal/tickets/7 authenticated guest:true' })).toBeInTheDocument()
+})
+
+it('an access session without a ticket_id goes to the portal home with an error flash', async () => {
+  server.use(http.post('/api/v1/portal/auth/exchange', () =>
+    HttpResponse.json({ ...portalFixtures.guestSession, ticket_id: null, kind: 'access' })))
+  mount('odd-access')
+  expect(await screen.findByRole('heading', { name: 'landing /portal anonymous guest:false' })).toBeInTheDocument()
+  expect(screen.getByText('This link did not include a ticket. Please request a new one.')).toBeInTheDocument()
+  // exchange() stores the session it receives; the rejected one must not survive a reload.
+  expect(localStorage.getItem(PORTAL_REFRESH_KEY)).toBeNull()
 })
 
 it('good-confirm: goes to the profile password section with a flash', async () => {
