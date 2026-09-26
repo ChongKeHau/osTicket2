@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { Banner, errorMessage } from './Banner'
 import { BannerProvider, useBanner } from './BannerContext'
@@ -29,7 +30,7 @@ function Flasher() {
 }
 
 it('flashes through the provider', async () => {
-  render(<BannerProvider><Flasher /></BannerProvider>)
+  render(<MemoryRouter><BannerProvider><Flasher /></BannerProvider></MemoryRouter>)
   await userEvent.click(screen.getByText('go'))
   expect(screen.getByRole('status')).toHaveTextContent('Saved')
 })
