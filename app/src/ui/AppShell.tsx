@@ -24,7 +24,7 @@ export function useSubNav(items: SubNavItem[], right?: ReactNode) {
   }, [set, key, right])
 }
 
-export function AppShell({ panel }: { panel: 'agent' | 'admin' }) {
+export function AppShell({ panel, children }: { panel: 'agent' | 'admin'; children?: ReactNode }) {
   const { staff, isAdmin, logout } = useAuth()
   const [sub, setSub] = useState<SubNavState | null>(null)
   const tabs = panel === 'admin' ? ADMIN_TABS : AGENT_TABS
@@ -48,7 +48,7 @@ export function AppShell({ panel }: { panel: 'agent' | 'admin' }) {
       <main className={s.content}>
         <SubNavCtx.Provider value={setter}>
           <BannerProvider>
-            <Outlet />
+            {children ?? <Outlet />}
           </BannerProvider>
         </SubNavCtx.Provider>
       </main>

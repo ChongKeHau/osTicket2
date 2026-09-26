@@ -8,10 +8,12 @@ import { adminFixtures } from '../../test/fixtures'
 import { renderWithProviders } from '../../test/render'
 import { server } from '../../test/setup'
 
-test('a non-admin gets not found at /admin and sees no Admin Panel link', async () => {
+test('a non-admin gets not found at /admin inside the agent shell with no Admin Panel link', async () => {
   localStorage.setItem(REFRESH_KEY, 'refresh-1') // default /me profile is not an admin
   renderWithProviders(<App />, { route: '/admin' })
   expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Log Out' })).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Primary' })).toHaveTextContent('Tickets')
   expect(screen.queryByRole('link', { name: 'Admin Panel' })).not.toBeInTheDocument()
 })
 

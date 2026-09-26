@@ -22,11 +22,11 @@ export const TICKET_QUEUES = [
 ] as const
 
 /** Sub-nav items for the Tickets tab; the active one is the queue whose
- *  search matches the current filters exactly (page/sort/q ignored). */
+ *  state and assignment match the current filters (page/sort/q/status/dept_id ignored). */
 export function ticketSubNav(current: URLSearchParams): SubNavItem[] {
   const norm = (p: URLSearchParams) => {
     const q = new URLSearchParams()
-    for (const k of ['state', 'assigned_to', 'status', 'dept_id']) { const v = p.get(k); if (v) q.set(k, v) }
+    for (const k of ['state', 'assigned_to']) { const v = p.get(k); if (v) q.set(k, v) }
     return q.toString()
   }
   const here = norm(current)
