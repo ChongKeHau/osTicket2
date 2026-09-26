@@ -207,13 +207,13 @@ func TestHandlerExchangeRegisterRefresh(t *testing.T) {
 	if w := h.call(http.MethodPost, "/portal/auth/exchange", "", `{}`); w.Code != 400 {
 		t.Fatalf("missing token: %d", w.Code)
 	}
-	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"new@x.test","name":"New","password":"secret123"}`); w.Code != 201 {
+	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"new@x.test","name":"New"}`); w.Code != 201 {
 		t.Fatalf("register: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"pat@x.test","name":"Pat","password":"secret123"}`); w.Code != 409 {
+	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"pat@x.test","name":"Pat"}`); w.Code != 409 {
 		t.Fatalf("register taken: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"nope","name":"N","password":"secret123"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["email"] == "" {
+	if w := h.call(http.MethodPost, "/portal/auth/register", "", `{"email":"nope","name":"N"}`); w.Code != 400 || decodeErr(t, w).Error.Fields["email"] == "" {
 		t.Fatalf("register bad email: %d %s", w.Code, w.Body.String())
 	}
 	if w := h.call(http.MethodPost, "/portal/auth/refresh", "", `{"refresh_token":"r"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"r2"`) {

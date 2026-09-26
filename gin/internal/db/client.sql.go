@@ -505,20 +505,6 @@ func (q *Queries) SetEndUserPassword(ctx context.Context, arg SetEndUserPassword
 	return err
 }
 
-const setEndUserPasswordHash = `-- name: SetEndUserPasswordHash :exec
-UPDATE end_user SET password_hash = $2, updated_at = now() WHERE id = $1
-`
-
-type SetEndUserPasswordHashParams struct {
-	ID           int64
-	PasswordHash *string
-}
-
-func (q *Queries) SetEndUserPasswordHash(ctx context.Context, arg SetEndUserPasswordHashParams) error {
-	_, err := q.db.Exec(ctx, setEndUserPasswordHash, arg.ID, arg.PasswordHash)
-	return err
-}
-
 const setThreadEntryUser = `-- name: SetThreadEntryUser :exec
 UPDATE thread_entry SET user_id = $2 WHERE id = $1
 `

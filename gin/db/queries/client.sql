@@ -13,9 +13,6 @@ UPDATE end_user SET name = $2, updated_at = now() WHERE id = $1 RETURNING *;
 -- name: SetEndUserPassword :exec
 UPDATE end_user SET password_hash = $2, email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE id = $1;
 
--- name: SetEndUserPasswordHash :exec
-UPDATE end_user SET password_hash = $2, updated_at = now() WHERE id = $1;
-
 -- name: MarkEndUserVerified :exec
 UPDATE end_user SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE id = $1;
 

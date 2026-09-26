@@ -33,8 +33,8 @@ type Profile struct {
 
 // Session is a portal sign-in result. TicketID is set for a guest session;
 // Kind names the emailed token that opened it (confirm, signin, access,
-// reset) and is empty for a password login or a refresh. A reset session
-// carries no refresh token.
+// reset) and is empty for a password login or a refresh. Confirm and reset
+// sessions carry no refresh token; they exist to set the password.
 type Session struct {
 	AccessToken  string  `json:"access_token"`
 	RefreshToken string  `json:"refresh_token"`
@@ -44,10 +44,12 @@ type Session struct {
 	Kind         string  `json:"kind,omitempty"`
 }
 
+// RegisterInput starts an account. It carries no password: the person who
+// follows the confirm link sets one, so an address cannot be claimed with a
+// password its owner never chose.
 type RegisterInput struct {
-	Email    string `json:"email" binding:"required,email,max=255"`
-	Name     string `json:"name" binding:"required,max=128"`
-	Password string `json:"password" binding:"required"`
+	Email string `json:"email" binding:"required,email,max=255"`
+	Name  string `json:"name" binding:"required,max=128"`
 }
 
 type PasswordInput struct {
@@ -155,14 +157,10 @@ func (s *Service) mailToken(ctx context.Context, q *db.Queries, u db.EndUser, ki
 	return s.sendLink(ctx, q, u, key, raw, ticketID, vars)
 }
 
-// Register sets a password on the address's end user (creating it if needed)
-// and mails a confirm link. The account cannot log in with the password until
-// the link is followed. An address that already has a password is a conflict.
+// Register creates (or reuses) the address's end user and mails a confirm
+// link; following it opens a session that sets the password. An address that
+// already has a password is a conflict.
 func (s *Service) Register(ctx context.Context, in RegisterInput) error {
-	hash, err := auth.HashPassword(in.Password)
-	if err != nil {
-		return err
-	}
 	return db.WithTx(ctx, s.b, func(q *db.Queries) error {
 		u, err := s.UpsertByEmail(ctx, q, in.Email, in.Name)
 		if err != nil {
@@ -170,9 +168,6 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) error {
 		}
 		if u.PasswordHash != nil {
 			return apperr.ErrConflict
-		}
-		if err := q.SetEndUserPasswordHash(ctx, db.SetEndUserPasswordHashParams{ID: u.ID, PasswordHash: &hash}); err != nil {
-			return err
 		}
 		return s.mailToken(ctx, q, u, db.ClientTokenKindConfirm, confirmTTL, "client_confirm", nil, mail.Vars{})
 	})
@@ -245,14 +240,24 @@ func (s *Service) RequestAccess(ctx context.Context, email, number string) error
 		if err != nil {
 			return err
 		}
+		pt, err := q.GetPortalTicket(ctx, id)
+		if err != nil {
+			return err
+		}
+		if pt.UserID == nil {
+			if err := q.SetTicketUser(ctx, db.SetTicketUserParams{ID: id, UserID: &u.ID}); err != nil {
+				return err
+			}
+		}
 		vars := mail.Vars{Number: t.Number, Subject: t.Subject, RequesterName: t.RequesterName}
 		return s.mailToken(ctx, q, u, db.ClientTokenKindAccess, accessTTL, "client_access_link", &id, vars)
 	})
 }
 
 // Exchange redeems an emailed one-time token. A confirm token verifies the
-// address; an access token opens a guest session for its ticket; a reset
-// token opens a password-reset session with no refresh token. Unknown, used
+// address and, like a reset token, opens a password-setting session (pwr
+// claim, no refresh token); an access token opens a guest session for its
+// ticket. Unknown, used
 // or expired tokens are ErrTokenInvalid.
 func (s *Service) Exchange(ctx context.Context, raw string) (*Session, error) {
 	var sess *Session
@@ -395,11 +400,11 @@ func (s *Service) LoadClient(ctx context.Context, userID int64) (Principal, erro
 	return Principal{UserID: u.ID, Email: u.Email, Verified: u.EmailVerifiedAt != nil}, nil
 }
 
-// issue opens a session for u. A reset session gets an access token with the
-// pwr claim and no refresh token; every other session gets a refresh token
+// issue opens a session for u. A confirm or reset session gets an access token
+// with the pwr claim and no refresh token; every other session gets a refresh token
 // with the same ticket scope as its access token.
 func (s *Service) issue(ctx context.Context, q *db.Queries, u db.EndUser, ticketID *int64, kind db.ClientTokenKind) (*Session, error) {
-	reset := kind == db.ClientTokenKindReset
+	reset := kind == db.ClientTokenKindReset || kind == db.ClientTokenKindConfirm
 	access, _, err := s.tokens.IssueAccess(u.ID, ticketID, reset)
 	if err != nil {
 		return nil, err
